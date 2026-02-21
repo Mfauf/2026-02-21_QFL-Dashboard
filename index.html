@@ -1,0 +1,382 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Qatar Freelance Dashboard</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            navy: {
+              950: '#050d1a',
+              900: '#0a1628',
+              800: '#0f2040',
+              700: '#163058',
+              600: '#1e4172',
+              500: '#25538e',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          }
+        }
+      }
+    }
+  </script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body class="bg-navy-950 text-slate-200 min-h-screen font-sans">
+
+  <!-- Sidebar -->
+  <aside id="sidebar" class="fixed top-0 left-0 h-full w-64 bg-navy-900 border-r border-slate-700/40 flex flex-col z-30 transition-transform duration-300 -translate-x-full md:translate-x-0">
+    <!-- Logo -->
+    <div class="flex items-center gap-3 px-6 py-5 border-b border-slate-700/40">
+      <div class="w-9 h-9 rounded-lg bg-blue-500 flex items-center justify-center shrink-0">
+        <svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3H5a2 2 0 00-2 2v4m6-6h10a2 2 0 012 2v4M9 3v18m0 0h10a2 2 0 002-2V9M9 21H5a2 2 0 01-2-2V9m0 0h18"/>
+        </svg>
+      </div>
+      <span class="font-semibold text-white text-sm tracking-wide">QFL Dashboard</span>
+    </div>
+
+    <!-- Nav -->
+    <nav class="flex-1 px-4 py-6 space-y-1 overflow-y-auto">
+      <p class="text-xs font-semibold text-slate-500 uppercase tracking-widest px-3 mb-3">Main</p>
+
+      <a href="#" class="nav-item nav-active flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+        </svg>
+        Overview
+      </a>
+
+      <a href="#" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+        </svg>
+        Projects
+      </a>
+
+      <a href="#" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        Invoices
+      </a>
+
+      <a href="#" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
+        </svg>
+        Time Logs
+      </a>
+
+      <a href="#" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        Clients
+      </a>
+
+      <p class="text-xs font-semibold text-slate-500 uppercase tracking-widest px-3 mt-6 mb-3">Account</p>
+
+      <a href="#" class="nav-item flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/>
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/>
+        </svg>
+        Settings
+      </a>
+    </nav>
+
+    <!-- User Profile -->
+    <div class="px-4 py-4 border-t border-slate-700/40">
+      <div class="flex items-center gap-3 px-3 py-2 rounded-lg bg-navy-800/60">
+        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-blue-600 flex items-center justify-center text-xs font-bold text-white shrink-0">
+          MF
+        </div>
+        <div class="flex-1 min-w-0">
+          <p class="text-sm font-medium text-white truncate">Mohammed Fauzan</p>
+          <p class="text-xs text-slate-400 truncate">Freelancer · Qatar</p>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Sidebar overlay (mobile) -->
+  <div id="sidebar-overlay" class="fixed inset-0 bg-black/60 z-20 hidden md:hidden" onclick="closeSidebar()"></div>
+
+  <!-- Main content wrapper -->
+  <div class="md:ml-64 flex flex-col min-h-screen transition-all duration-300" id="main-wrapper">
+
+    <!-- Top Header -->
+    <header class="sticky top-0 z-10 bg-navy-900/80 backdrop-blur border-b border-slate-700/40 px-4 md:px-6 py-4">
+      <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <!-- Mobile menu button -->
+          <button onclick="openSidebar()" class="md:hidden w-9 h-9 rounded-lg bg-navy-800 border border-slate-700/60 flex items-center justify-center text-slate-400 hover:text-white transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"/>
+            </svg>
+          </button>
+          <div>
+            <h1 class="text-base md:text-lg font-semibold text-white leading-tight">Overview</h1>
+            <p class="text-xs text-slate-400" id="current-date"></p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2">
+          <!-- Search -->
+          <div class="relative hidden sm:block">
+            <svg class="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"/>
+            </svg>
+            <input type="text" placeholder="Search projects..." id="search-input"
+              class="bg-navy-800 border border-slate-700/60 text-sm text-slate-300 placeholder-slate-500 rounded-lg pl-9 pr-4 py-2 w-48 lg:w-56 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500/50 transition"/>
+          </div>
+          <!-- Notification bell -->
+          <button class="w-9 h-9 rounded-lg bg-navy-800 border border-slate-700/60 flex items-center justify-center text-slate-400 hover:text-white hover:border-slate-500 transition">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Page Content -->
+    <main class="flex-1 px-4 md:px-6 py-6 md:py-8 space-y-8">
+
+      <!-- Welcome Banner -->
+      <div class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-navy-700 via-navy-600 to-blue-700 p-6 md:p-8">
+        <div class="relative z-10">
+          <p class="text-blue-200 text-sm font-medium mb-1">Good day 👋</p>
+          <h2 class="text-white text-xl md:text-2xl font-semibold">Here's your freelance summary</h2>
+          <p class="text-blue-200/80 text-sm mt-1">Track your projects, income, and working hours at a glance.</p>
+        </div>
+        <div class="absolute -top-8 -right-8 w-48 h-48 rounded-full bg-white/5 pointer-events-none"></div>
+        <div class="absolute -bottom-10 right-16 w-32 h-32 rounded-full bg-white/5 pointer-events-none"></div>
+        <div class="absolute top-4 right-32 w-16 h-16 rounded-full bg-white/5 pointer-events-none"></div>
+      </div>
+
+      <!-- Stats Cards -->
+      <section>
+        <h3 class="section-label">Key Metrics</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-5" id="stats-cards">
+          <div class="card-skeleton rounded-xl h-32"></div>
+          <div class="card-skeleton rounded-xl h-32"></div>
+          <div class="card-skeleton rounded-xl h-32"></div>
+        </div>
+      </section>
+
+      <!-- Projects Table -->
+      <section>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <h3 class="section-label">Projects</h3>
+          <div class="flex items-center gap-2 flex-wrap">
+            <button onclick="filterProjects('all')" id="filter-all" class="filter-btn filter-active">All</button>
+            <button onclick="filterProjects('in-progress')" id="filter-in-progress" class="filter-btn">In Progress</button>
+            <button onclick="filterProjects('complete')" id="filter-complete" class="filter-btn">Complete</button>
+          </div>
+        </div>
+
+        <div class="rounded-xl border border-slate-700/40 overflow-hidden bg-navy-900">
+          <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+              <thead>
+                <tr class="border-b border-slate-700/40 bg-navy-800/60">
+                  <th class="th-cell">#</th>
+                  <th class="th-cell text-left">Project</th>
+                  <th class="th-cell text-left hidden md:table-cell">Client</th>
+                  <th class="th-cell text-left hidden lg:table-cell">Category</th>
+                  <th class="th-cell text-right hidden sm:table-cell">Amount</th>
+                  <th class="th-cell text-right hidden lg:table-cell">Hours</th>
+                  <th class="th-cell text-left hidden md:table-cell">Due Date</th>
+                  <th class="th-cell text-center">Status</th>
+                </tr>
+              </thead>
+              <tbody id="projects-tbody">
+                <tr><td colspan="8" class="text-center py-12 text-slate-500 text-sm">Loading projects...</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="border-t border-slate-700/40 bg-navy-800/40 px-5 py-3 flex items-center justify-between">
+            <p class="text-xs text-slate-500" id="table-count">— projects</p>
+            <p class="text-xs text-slate-600">Qatar Freelance Dashboard · 2026</p>
+          </div>
+        </div>
+      </section>
+
+    </main>
+  </div>
+
+  <script>
+    // ── Date stamp ───────────────────────────────────────────────────────────
+    document.getElementById('current-date').textContent = new Date().toLocaleDateString('en-US', {
+      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric'
+    });
+
+    // ── Sidebar helpers (mobile) ─────────────────────────────────────────────
+    function openSidebar() {
+      document.getElementById('sidebar').classList.remove('-translate-x-full');
+      document.getElementById('sidebar-overlay').classList.remove('hidden');
+    }
+    function closeSidebar() {
+      document.getElementById('sidebar').classList.add('-translate-x-full');
+      document.getElementById('sidebar-overlay').classList.add('hidden');
+    }
+
+    // ── State ────────────────────────────────────────────────────────────────
+    let allProjects = [];
+    let currentFilter = 'all';
+
+    // ── Load data.json ───────────────────────────────────────────────────────
+    fetch('data.json')
+      .then(res => {
+        if (!res.ok) throw new Error('Network response was not ok');
+        return res.json();
+      })
+      .then(data => {
+        renderStats(data.stats, data.projects);
+        allProjects = data.projects;
+        renderTable(allProjects);
+      })
+      .catch(() => {
+        document.getElementById('stats-cards').innerHTML =
+          `<div class="col-span-3 text-center py-6 text-red-400 text-sm">
+            ⚠ Could not load <strong>data.json</strong>. Use a local server (e.g. VS Code Live Server) to run this page.
+          </div>`;
+        document.getElementById('projects-tbody').innerHTML =
+          `<tr><td colspan="8" class="text-center py-12 text-slate-500 text-sm">No data available.</td></tr>`;
+      });
+
+    // ── Stats Cards ──────────────────────────────────────────────────────────
+    function renderStats(stats, projects) {
+      const inProgress = projects.filter(p => p.status === 'in-progress').length;
+      const complete   = projects.filter(p => p.status === 'complete').length;
+
+      const cards = [
+        {
+          label: 'Total Projects',
+          value: stats.totalProjects,
+          sub: `${inProgress} in progress &nbsp;·&nbsp; ${complete} complete`,
+          svgPath: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>`,
+          gradient: 'from-blue-500/20 to-blue-600/5',
+          iconCls: 'bg-blue-500/20 text-blue-400',
+          borderCls: 'border-blue-500/25',
+        },
+        {
+          label: 'Amount Received',
+          value: 'QAR&nbsp;' + stats.amountReceived.toLocaleString(),
+          sub: 'Total earnings across all projects',
+          svgPath: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>`,
+          gradient: 'from-emerald-500/20 to-emerald-600/5',
+          iconCls: 'bg-emerald-500/20 text-emerald-400',
+          borderCls: 'border-emerald-500/25',
+        },
+        {
+          label: 'Registered Hours',
+          value: stats.registeredHours.toLocaleString() + '&nbsp;hrs',
+          sub: 'Total hours logged across projects',
+          svgPath: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>`,
+          gradient: 'from-violet-500/20 to-violet-600/5',
+          iconCls: 'bg-violet-500/20 text-violet-400',
+          borderCls: 'border-violet-500/25',
+        },
+      ];
+
+      document.getElementById('stats-cards').innerHTML = cards.map(c => `
+        <div class="relative overflow-hidden rounded-xl border ${c.borderCls} bg-gradient-to-br ${c.gradient} bg-navy-900/80 p-5 flex flex-col gap-4 hover:scale-[1.015] transition-transform duration-200 cursor-default">
+          <div class="flex items-start justify-between gap-3">
+            <div class="min-w-0">
+              <p class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">${c.label}</p>
+              <p class="text-2xl font-bold text-white leading-tight">${c.value}</p>
+            </div>
+            <div class="w-11 h-11 rounded-xl ${c.iconCls} flex items-center justify-center shrink-0">
+              <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">${c.svgPath}</svg>
+            </div>
+          </div>
+          <p class="text-xs text-slate-400">${c.sub}</p>
+        </div>
+      `).join('');
+    }
+
+    // ── Projects Table ───────────────────────────────────────────────────────
+    function renderTable(projects) {
+      const tbody = document.getElementById('projects-tbody');
+      const count = document.getElementById('table-count');
+
+      if (!projects.length) {
+        tbody.innerHTML = `
+          <tr>
+            <td colspan="8" class="text-center py-14 text-slate-500 text-sm">
+              <svg class="w-10 h-10 mx-auto mb-3 text-slate-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+              </svg>
+              No projects found
+            </td>
+          </tr>`;
+        count.textContent = '0 projects';
+        return;
+      }
+
+      tbody.innerHTML = projects.map((p, i) => {
+        const done = p.status === 'complete';
+        const due  = new Date(p.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+        return `
+          <tr class="border-b border-slate-700/30 last:border-0 hover:bg-navy-800/50 transition-colors duration-150">
+            <td class="td-cell text-slate-500 font-mono text-xs text-center">${String(i + 1).padStart(2, '0')}</td>
+            <td class="td-cell">
+              <span class="font-medium text-slate-100">${p.name}</span>
+            </td>
+            <td class="td-cell text-slate-400 text-xs hidden md:table-cell">${p.client}</td>
+            <td class="td-cell hidden lg:table-cell">
+              <span class="inline-block text-xs px-2 py-1 rounded-md bg-navy-800 text-slate-400 border border-slate-700/50">${p.category}</span>
+            </td>
+            <td class="td-cell text-right font-medium text-slate-200 tabular-nums hidden sm:table-cell whitespace-nowrap">
+              QAR&nbsp;${p.amount.toLocaleString()}
+            </td>
+            <td class="td-cell text-right text-slate-400 tabular-nums text-xs hidden lg:table-cell">${p.hours}&nbsp;hrs</td>
+            <td class="td-cell text-xs text-slate-400 hidden md:table-cell whitespace-nowrap">${due}</td>
+            <td class="td-cell text-center">
+              <span class="${done ? 'badge-complete' : 'badge-progress'}">${done ? 'Complete' : 'In Progress'}</span>
+            </td>
+          </tr>`;
+      }).join('');
+
+      count.textContent = `${projects.length} project${projects.length !== 1 ? 's' : ''}`;
+    }
+
+    // ── Filter ───────────────────────────────────────────────────────────────
+    function filterProjects(filter) {
+      currentFilter = filter;
+      document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('filter-active'));
+      document.getElementById('filter-' + filter).classList.add('filter-active');
+      const list = filter === 'all' ? allProjects : allProjects.filter(p => p.status === filter);
+      renderTable(applySearch(list));
+    }
+
+    // ── Search ───────────────────────────────────────────────────────────────
+    function applySearch(list) {
+      const q = (document.getElementById('search-input').value || '').toLowerCase().trim();
+      if (!q) return list;
+      return list.filter(p =>
+        p.name.toLowerCase().includes(q) ||
+        p.client.toLowerCase().includes(q) ||
+        p.category.toLowerCase().includes(q)
+      );
+    }
+
+    document.getElementById('search-input').addEventListener('input', () => {
+      const src = currentFilter === 'all' ? allProjects : allProjects.filter(p => p.status === currentFilter);
+      renderTable(applySearch(src));
+    });
+  </script>
+</body>
+</html>
+</html>

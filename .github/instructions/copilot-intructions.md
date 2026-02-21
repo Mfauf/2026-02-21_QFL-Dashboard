@@ -1,0 +1,8 @@
+- **Always** use a Mobile-First approuch when writing CSS. This means that you should write styles for mobile devices first, and then use media queries to add styles for larger screens.
+- **Always** ensure responsive design by using relative units (like %, em, rem) instead of fixed units (like px) for layout and typography.
+- **Always** ensure responsviness using flexbox or CSS grid for layout to create flexible and adaptive designs.
+- **Always** use tailwind CSS for styling to maintain consistency and efficiency in your design.
+- **Always** use w-full or max-w-full and h-full for containers to prevent horizontal scrolling on smaller screens.
+- **Never** use fised widths like w-[400px] on mobile views; use percentagees or flex-1
+- **Always** write useful comments in your code to explain the purpose of complex sections or to provide context for future developers.
+- **Always** organize your code in multiple files and folders based on functionality (e.g., components, styles, utils) to improve maintainability and readability.

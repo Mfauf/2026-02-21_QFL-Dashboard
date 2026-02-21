@@ -1,0 +1,97 @@
+{
+  "stats": {
+    "totalProjects": 24,
+    "amountReceived": 187500,
+    "registeredHours": 1340
+  },
+  "projects": [
+    {
+      "id": 1,
+      "name": "E-Commerce Platform Redesign",
+      "client": "Al Nasser Trading Co.",
+      "category": "Web Design",
+      "startDate": "2025-10-01",
+      "endDate": "2026-01-15",
+      "amount": 18500,
+      "hours": 142,
+      "status": "complete"
+    },
+    {
+      "id": 2,
+      "name": "Mobile Banking App UI",
+      "client": "Qatar National Bank",
+      "category": "UI/UX",
+      "startDate": "2025-11-10",
+      "endDate": "2026-03-30",
+      "amount": 32000,
+      "hours": 210,
+      "status": "in-progress"
+    },
+    {
+      "id": 3,
+      "name": "Corporate Identity Package",
+      "client": "Doha Tech Solutions",
+      "category": "Branding",
+      "startDate": "2025-12-01",
+      "endDate": "2026-02-10",
+      "amount": 9500,
+      "hours": 68,
+      "status": "complete"
+    },
+    {
+      "id": 4,
+      "name": "Real Estate Listing Portal",
+      "client": "Pearl Living Properties",
+      "category": "Web Development",
+      "startDate": "2026-01-05",
+      "endDate": "2026-04-20",
+      "amount": 27000,
+      "hours": 195,
+      "status": "in-progress"
+    },
+    {
+      "id": 5,
+      "name": "HR Management Dashboard",
+      "client": "Gulf Workforce Ltd.",
+      "category": "Web App",
+      "startDate": "2026-01-20",
+      "endDate": "2026-05-01",
+      "amount": 21500,
+      "hours": 160,
+      "status": "in-progress"
+    },
+    {
+      "id": 6,
+      "name": "Restaurant Booking System",
+      "client": "Spice Garden Group",
+      "category": "Web Development",
+      "startDate": "2025-09-15",
+      "endDate": "2025-12-20",
+      "amount": 14000,
+      "hours": 98,
+      "status": "complete"
+    },
+    {
+      "id": 7,
+      "name": "Logistics Tracking App",
+      "client": "Qatar Freight Express",
+      "category": "Mobile App",
+      "startDate": "2026-02-01",
+      "endDate": "2026-06-15",
+      "amount": 38000,
+      "hours": 260,
+      "status": "in-progress"
+    },
+    {
+      "id": 8,
+      "name": "Educational Platform MVP",
+      "client": "Bright Minds Academy",
+      "category": "Web App",
+      "startDate": "2025-08-01",
+      "endDate": "2025-11-30",
+      "amount": 27000,
+      "hours": 207,
+      "status": "complete"
+    }
+  ]
+}
