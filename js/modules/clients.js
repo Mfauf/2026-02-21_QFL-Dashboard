@@ -185,7 +185,7 @@ function rowHTML(c) {
           <div class="avatar w-9 h-9 text-white shrink-0" style="background:${bg}">${escapeHtml(ini)}</div>
           <div class="min-w-0">
             <p class="font-medium text-[var(--clr-text)] truncate">${escapeHtml(c.name)}</p>
-            ${c.company ? `<p class="text-xs text-[var(--clr-text-faint)] truncate">${escapeHtml(c.company)}</p>` : ''}
+            <p class="text-xs truncate" style="color:var(--clr-text-faint)">${c.company ? escapeHtml(c.company) : '<em>Individual</em>'}</p>
           </div>
         </div>
       </td>
@@ -208,9 +208,32 @@ function rowHTML(c) {
         ${[c.city, c.country].filter(Boolean).map(escapeHtml).join(', ') || '—'}
       </td>
 
-      <!-- Status -->
-      <td class="td-cell text-center">
-        <span class="badge ${badgeCls}">${statusLabel}</span>
+      <!-- Status — clickable badge opens quick-change dropdown -->
+      <td class="td-cell">
+        <div class="relative inline-block">
+          <button class="badge ${badgeCls} flex items-center gap-1 cursor-pointer"
+                  data-action="status-btn" data-id="${c.id}"
+                  title="Change status">
+            ${statusLabel}
+            <svg class="w-3 h-3 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
+            </svg>
+          </button>
+          <div class="status-menu hidden absolute left-0 top-full mt-1 z-20 rounded-lg shadow-lg overflow-hidden"
+               style="min-width:7rem; background:var(--clr-surface-2); border:1px solid var(--clr-border)"
+               data-status-menu="${c.id}">
+            <button class="w-full text-left px-3 py-2 text-xs font-medium flex items-center gap-2
+                           transition-colors hover:bg-[var(--clr-surface-3)]"
+                    data-action="set-status" data-id="${c.id}" data-status="active">
+              <span class="badge badge-active pointer-events-none">Active</span>
+            </button>
+            <button class="w-full text-left px-3 py-2 text-xs font-medium flex items-center gap-2
+                           transition-colors hover:bg-[var(--clr-surface-3)]"
+                    data-action="set-status" data-id="${c.id}" data-status="inactive">
+              <span class="badge badge-inactive pointer-events-none">Inactive</span>
+            </button>
+          </div>
+        </div>
       </td>
 
       <!-- Added -->
