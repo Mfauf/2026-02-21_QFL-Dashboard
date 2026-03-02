@@ -1,0 +1,191 @@
+/**
+ * ui.js — Shared UI components:
+ *   - Toast notifications
+ *   - Modal (add/edit form)
+ *   - Confirm dialog (delete)
+ *   - Sidebar open/close on mobile
+ */
+
+/* ── Toast ──────────────────────────────────────────────────────────────── */
+
+/**
+ * Show a toast notification.
+ * @param {string} message
+ * @param {'success'|'error'|'info'} [type]
+ * @param {number} [duration] ms before auto-dismiss
+ */
+export function toast(message, type = 'success', duration = 3500) {
+  const container = document.getElementById('toast-container');
+  if (!container) return;
+
+  const icons = {
+    success: `<svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/>
+              </svg>`,
+    error:   `<svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/>
+              </svg>`,
+    info:    `<svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M12 2a10 10 0 110 20A10 10 0 0112 2z"/>
+              </svg>`,
+  };
+
+  const el = document.createElement('div');
+  el.className = `toast toast-${type}`;
+  el.innerHTML = `${icons[type] ?? ''}<span>${message}</span>`;
+  container.appendChild(el);
+
+  // Auto-dismiss
+  const dismiss = () => {
+    el.classList.add('removing');
+    el.addEventListener('animationend', () => el.remove(), { once: true });
+  };
+  setTimeout(dismiss, duration);
+  el.addEventListener('click', dismiss);
+}
+
+/* ── Modal ──────────────────────────────────────────────────────────────── */
+
+let _modalCloseCallback = null;
+
+/**
+ * Open the global modal.
+ * @param {{ title: string, bodyHTML: string, onSubmit: (formData: FormData) => Promise<void>, submitLabel?: string }} opts
+ */
+export function openModal({ title, bodyHTML, onSubmit, submitLabel = 'Save' }) {
+  const backdrop = document.getElementById('modal-backdrop');
+  const modalTitle = document.getElementById('modal-title');
+  const modalBody  = document.getElementById('modal-body');
+  const submitBtn  = document.getElementById('modal-submit');
+  const form       = document.getElementById('modal-form');
+
+  modalTitle.textContent = title;
+  modalBody.innerHTML    = bodyHTML;
+  submitBtn.textContent  = submitLabel;
+
+  // Reset form state
+  form.reset?.();
+  submitBtn.disabled = false;
+
+  // Attach submit handler
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Saving…';
+    try {
+      await onSubmit(new FormData(form));
+      closeModal();
+    } catch (err) {
+      console.error('[Modal] Submit error:', err);
+      submitBtn.disabled = false;
+      submitBtn.textContent = submitLabel;
+    }
+  };
+
+  form.addEventListener('submit', handleSubmit, { once: true });
+  _modalCloseCallback = () => form.removeEventListener('submit', handleSubmit);
+
+  // Open with animation
+  requestAnimationFrame(() => {
+    backdrop.classList.remove('hidden');
+    requestAnimationFrame(() => backdrop.classList.add('open'));
+  });
+}
+
+/** Close the global modal. */
+export function closeModal() {
+  const backdrop = document.getElementById('modal-backdrop');
+  backdrop.classList.remove('open');
+  backdrop.addEventListener('transitionend', () => {
+    backdrop.classList.add('hidden');
+    document.getElementById('modal-body').innerHTML = '';
+  }, { once: true });
+
+  _modalCloseCallback?.();
+  _modalCloseCallback = null;
+}
+
+/* ── Confirm dialog ─────────────────────────────────────────────────────── */
+
+/**
+ * Show a confirmation dialog before a destructive action.
+ * @param {{ title?: string, message: string, confirmLabel?: string, onConfirm: () => Promise<void> }} opts
+ */
+export function openConfirm({ title = 'Are you sure?', message, confirmLabel = 'Delete', onConfirm }) {
+  const backdrop   = document.getElementById('confirm-backdrop');
+  const titleEl    = document.getElementById('confirm-title');
+  const messageEl  = document.getElementById('confirm-message');
+  const confirmBtn = document.getElementById('confirm-ok');
+  const cancelBtn  = document.getElementById('confirm-cancel');
+
+  titleEl.textContent   = title;
+  messageEl.textContent = message;
+  confirmBtn.textContent = confirmLabel;
+  confirmBtn.disabled    = false;
+
+  const close = () => {
+    backdrop.classList.remove('open');
+    backdrop.addEventListener('transitionend', () => backdrop.classList.add('hidden'), { once: true });
+  };
+
+  const handleConfirm = async () => {
+    confirmBtn.disabled = true;
+    confirmBtn.textContent = '…';
+    try {
+      await onConfirm();
+    } finally {
+      close();
+    }
+  };
+
+  confirmBtn.onclick = handleConfirm;
+  cancelBtn.onclick  = close;
+  backdrop.querySelector('.confirm-box').onclick = (e) => e.stopPropagation();
+
+  requestAnimationFrame(() => {
+    backdrop.classList.remove('hidden');
+    requestAnimationFrame(() => backdrop.classList.add('open'));
+  });
+}
+
+/* ── Sidebar (mobile) ───────────────────────────────────────────────────── */
+export function openSidebar() {
+  document.getElementById('sidebar').classList.remove('-translate-x-full');
+  document.getElementById('sidebar-overlay').classList.remove('hidden');
+}
+
+export function closeSidebar() {
+  document.getElementById('sidebar').classList.add('-translate-x-full');
+  document.getElementById('sidebar-overlay').classList.add('hidden');
+}
+
+/* ── Init shared UI listeners ────────────────────────────────────────────── */
+export function initUI() {
+  // Close modal on backdrop click
+  document.getElementById('modal-backdrop')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) closeModal();
+  });
+
+  // Close confirm on backdrop click
+  document.getElementById('confirm-backdrop')?.addEventListener('click', (e) => {
+    if (e.target === e.currentTarget) {
+      e.currentTarget.classList.remove('open');
+      setTimeout(() => e.currentTarget.classList.add('hidden'), 200);
+    }
+  });
+
+  // Modal cancel button
+  document.getElementById('modal-cancel')?.addEventListener('click', closeModal);
+
+  // Escape key closes the topmost open dialog
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    const confirm = document.getElementById('confirm-backdrop');
+    if (confirm && !confirm.classList.contains('hidden')) {
+      confirm.classList.remove('open');
+      setTimeout(() => confirm.classList.add('hidden'), 200);
+      return;
+    }
+    closeModal();
+  });
+}
