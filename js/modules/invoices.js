@@ -14,6 +14,7 @@
 import { addRecord, getAllRecords, updateRecord, deleteRecord } from '../db.js';
 import { toast, openModal, openConfirm }                       from '../ui.js';
 import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce } from '../utils.js';
+import { addNotification }                                     from '../notifications.js';
 import { printInvoice }                                        from '../invoice-pdf.js';
 
 /* ── Module state ───────────────────────────────────────────────────────── */
@@ -58,6 +59,7 @@ async function loadInvoices() {
       getAllRecords('clients'),
       getAllRecords('projects'),
     ]);
+    await processOverdue();
     renderStats();
     renderTable(applyFilters());
 
@@ -72,7 +74,24 @@ async function loadInvoices() {
     toast('Failed to load invoices.', 'error');
   }
 }
-
+/* ── Auto-flag overdue invoices ────────────────────────────────────────── */
+async function processOverdue() {
+  const today  = new Date().toISOString().slice(0, 10);
+  const toFlip = _invoices.filter(inv =>
+    (inv.status === 'sent' || inv.status === 'draft') &&
+    inv.dueAt && inv.dueAt < today
+  );
+  for (const inv of toFlip) {
+    await updateRecord('invoices', inv.id, { status: 'overdue' });
+    inv.status = 'overdue';   // mirror change in-memory
+    addNotification({
+      type:    'overdue',
+      title:   `Invoice ${inv.number ?? inv.id} is now overdue`,
+      message: `${clientName(inv.clientId)} — was due ${formatDate(inv.dueAt)}.
+                Status automatically changed to Overdue.`,
+    });
+  }
+}
 /* ── Lookup helpers ─────────────────────────────────────────────────────── */
 const clientName  = (id) => _clients.find(c => c.id === Number(id))?.name  ?? '—';
 const projectName = (id) => _projects.find(p => p.id === Number(id))?.name ?? '—';

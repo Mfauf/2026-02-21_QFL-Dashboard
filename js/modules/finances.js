@@ -16,6 +16,7 @@
 import { addRecord, getAllRecords, updateRecord, deleteRecord } from '../db.js';
 import { toast, openModal, openConfirm }                       from '../ui.js';
 import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce } from '../utils.js';
+import { addNotification }                                     from '../notifications.js';
 import { getSettings }                                         from '../settings-store.js';
 
 /* ── Module state ───────────────────────────────────────────────────────── */
@@ -84,6 +85,7 @@ async function processRecurring() {
     const allDates  = [parent.date, ...children.map(c => c.date)].filter(Boolean).sort();
     let   lastDate  = allDates.at(-1);
     let   next      = nextRecurDate(lastDate, parent.recurring);
+    let   parentAdded = 0;
 
     while (next <= today) {
       await addRecord('transactions', {
@@ -100,6 +102,19 @@ async function processRecurring() {
       lastDate = next;
       next     = nextRecurDate(next, parent.recurring);
       added++;
+      parentAdded++;
+    }
+
+    if (parentAdded > 0) {
+      addNotification({
+        type:    'recurring',
+        title:   `Auto-generated: ${parent.category}`,
+        message: `${parentAdded} ${parent.recurring} ${
+          parent.type === 'income' ? 'income' : 'expense'
+        } entr${parentAdded > 1 ? 'ies' : 'y'} added (QAR ${
+          Number(parent.amount).toLocaleString()
+        } each).`,
+      });
     }
   }
   return added;

@@ -182,14 +182,21 @@
         </div>
       </div>
 
-      <!-- Notification bell placeholder -->
-      <button class="btn btn-icon" aria-label="Notifications">
+      <!-- Notification bell -->
+      <button id="btn-notifications" class="btn btn-icon relative" aria-label="Notifications">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
             d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0
                00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0
                .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"/>
         </svg>
+        <span id="notif-badge"
+              style="display:none;position:absolute;top:-3px;right:-3px;
+                     width:1.1rem;height:1.1rem;border-radius:9999px;
+                     background:var(--clr-danger);color:#fff;
+                     font-size:.6rem;font-weight:700;
+                     align-items:center;justify-content:center;line-height:1;">
+        </span>
       </button>
     </header>
 
@@ -258,6 +265,55 @@
   </div>
 
   <!-- 
+       NOTIFICATION PANEL  (slides in from the right)
+   -->
+  <!-- Semi-transparent overlay -->
+  <div id="notif-overlay"
+       class="hidden fixed inset-0 z-40"
+       style="background:rgba(0,0,0,0.5);backdrop-filter:blur(2px);
+              opacity:0;transition:opacity 0.25s ease">
+  </div>
+
+  <!-- Drawer -->
+  <aside id="notif-drawer"
+         class="fixed top-0 right-0 h-full z-50 flex flex-col"
+         style="width:380px;max-width:95vw;
+                background:var(--clr-surface);
+                border-left:1px solid var(--clr-border);
+                transform:translateX(100%);
+                transition:transform 0.3s cubic-bezier(.4,0,.2,1);">
+
+    <!-- Header -->
+    <div class="flex items-center justify-between px-5 py-4"
+         style="border-bottom:1px solid var(--clr-border);flex-shrink:0">
+      <div>
+        <h3 class="text-sm font-semibold text-white">Notifications</h3>
+        <p class="text-xs mt-0.5" style="color:var(--clr-text-faint)">Auto-actions &amp; alerts</p>
+      </div>
+      <div class="flex items-center gap-2">
+        <button id="notif-mark-read"
+                class="text-xs px-2.5 py-1 rounded-lg font-medium"
+                style="background:var(--clr-surface-2);color:var(--clr-text-muted)"
+                title="Mark all as read">Mark all read</button>
+        <button id="notif-clear-all"
+                class="text-xs px-2.5 py-1 rounded-lg font-medium"
+                style="background:var(--clr-danger-bg);color:var(--clr-danger)"
+                title="Clear all">Clear all</button>
+        <button id="notif-close" class="btn btn-icon" aria-label="Close notifications">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M6 18L18 6M6 6l12 12"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <!-- Scrollable list -->
+    <div id="notif-list" class="flex-1 overflow-y-auto"></div>
+
+  </aside>
+
+  <!-- 
        TOAST CONTAINER
    -->
   <div id="toast-container" aria-live="polite" aria-atomic="false"></div>
@@ -268,6 +324,7 @@
   <script type="module">
     import { initUI, openSidebar, closeSidebar } from './js/ui.js';
     import { initRouter, registerRoute }          from './js/router.js';
+    import { initNotifications }                 from './js/notif-ui.js';
     import { mount as overviewMount }             from './js/modules/overview.js';
     import { mount as clientsMount,
              unmount as clientsUnmount }          from './js/modules/clients.js';
@@ -358,6 +415,9 @@
 
     /* Init shared UI (modal close, escape key, confirm dialog) */
     initUI();
+
+    /* Init notification bell + panel */
+    initNotifications();
 
     /* Start the hash-based router */
     initRouter();
