@@ -7,16 +7,16 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg?v=2" />
   <link rel="shortcut icon" href="favicon.svg?v=2" />
 
-  <!-- Tailwind CSS (production build — tree-shaken, minified) -->
-  <link rel="stylesheet" href="css/tailwind.css" />
-
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
 
-  <!-- App styles (CSS variables + custom utilities Tailwind cannot express) -->
+  <!-- App styles (CSS variables + custom utilities) -->
   <link rel="stylesheet" href="css/styles.css" />
+
+  <!-- Tailwind CSS (production build — tree-shaken, minified; loaded after styles.css so utilities win by source order) -->
+  <link rel="stylesheet" href="css/tailwind.css" />
 
   <!-- Chart.js — self-hosted vendor bundle -->
   <script src="js/vendor/chart.umd.min.js"></script>
