@@ -31,7 +31,6 @@ export async function mount(container) {
 }
 
 export function unmount() {
-  document.getElementById('qfl-status-menu')?.remove();
   _container = null;
 }
 
@@ -132,71 +131,24 @@ function renderTable(clients) {
     btn.addEventListener('click', () => confirmDelete(Number(btn.dataset.id), btn.dataset.name));
   });
 
-  // ── Floating status menu (fixed-position, escapes all overflow clipping) ──
-  let statusMenu = document.getElementById('qfl-status-menu');
-  if (!statusMenu) {
-    statusMenu = document.createElement('div');
-    statusMenu.id = 'qfl-status-menu';
-    statusMenu.className = 'hidden';
-    statusMenu.innerHTML = `
-      <button class="w-full text-left px-3 py-2 text-xs font-medium flex items-center gap-2
-                     transition-colors hover:bg-[var(--clr-surface-3)]"
-              data-action="set-status" data-status="active">
-        <span class="badge badge-active pointer-events-none">Active</span>
-      </button>
-      <button class="w-full text-left px-3 py-2 text-xs font-medium flex items-center gap-2
-                     transition-colors hover:bg-[var(--clr-surface-3)]"
-              data-action="set-status" data-status="inactive">
-        <span class="badge badge-inactive pointer-events-none">Inactive</span>
-      </button>`;
-    Object.assign(statusMenu.style, {
-      position: 'fixed', zIndex: '9999', minWidth: '7rem',
-      borderRadius: '0.5rem', overflow: 'hidden',
-      boxShadow: '0 8px 24px rgba(0,0,0,.45)',
-      background: 'var(--clr-surface-2)',
-      border: '1px solid var(--clr-border)',
-    });
-    document.body.appendChild(statusMenu);
-    // Delegate set-status clicks — wired once at creation
-    statusMenu.addEventListener('click', async (e) => {
+  // Quick status — clicking the badge toggles active ↔ inactive directly
+  tbody.querySelectorAll('[data-action="status-btn"]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const btn = e.target.closest('[data-action="set-status"]');
-      if (!btn) return;
-      const id     = Number(statusMenu.dataset.targetId);
-      const status = btn.dataset.status;
-      statusMenu.classList.add('hidden');
+      const id     = Number(btn.dataset.id);
+      const client = _allClients.find(c => c.id === id);
+      if (!client) return;
+      const newStatus = client.status === 'active' ? 'inactive' : 'active';
       try {
-        await updateRecord('clients', id, { status });
-        const client = _allClients.find(c => c.id === id);
-        if (client) client.status = status;
+        await updateRecord('clients', id, { status: newStatus });
+        client.status = newStatus;
         renderStats();
         renderTable(applyFilters());
-        toast(`Status updated to ${ status === 'active' ? 'Active' : 'Inactive' }.`, 'success');
+        toast(`Status changed to ${ newStatus === 'active' ? 'Active' : 'Inactive' }.`, 'success');
       } catch (err) {
         console.error('[Clients] Status update error:', err);
         toast('Failed to update status.', 'error');
       }
-    });
-  }
-
-  // Quick status badge — position floating menu above badge on click
-  tbody.querySelectorAll('[data-action="status-btn"]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id = btn.dataset.id;
-      // Toggle closed if already open for this same client
-      if (statusMenu.dataset.targetId === id && !statusMenu.classList.contains('hidden')) {
-        statusMenu.classList.add('hidden');
-        return;
-      }
-      statusMenu.dataset.targetId = id;
-      statusMenu.classList.remove('hidden');
-      requestAnimationFrame(() => {
-        const rect = btn.getBoundingClientRect();
-        const mh   = statusMenu.offsetHeight;
-        statusMenu.style.left = `${rect.left}px`;
-        statusMenu.style.top  = `${rect.top - mh - 4}px`;
-      });
     });
   });
 }
@@ -419,9 +371,7 @@ function bindListeners() {
   // Add client button
   _container.querySelector('#btn-add-client')?.addEventListener('click', openAddModal);
   // Close any open status dropdowns when clicking outside the table
-  document.addEventListener('click', () => {
-    document.getElementById('qfl-status-menu')?.classList.add('hidden');
-  }, { capture: false });
+
   // Search input (debounced)
   const searchInput = _container.querySelector('#clients-search');
   if (searchInput) {
