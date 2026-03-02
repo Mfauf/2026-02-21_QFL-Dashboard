@@ -173,6 +173,27 @@ function renderTable(invoices) {
   tbody.querySelectorAll('[data-action="delete"]').forEach(btn =>
     btn.addEventListener('click', () => confirmDelete(Number(btn.dataset.id), btn.dataset.number))
   );
+
+  // Cycle status on badge click
+  tbody.querySelectorAll('[data-action="status-btn"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const id      = Number(btn.dataset.id);
+      const invoice = _invoices.find(inv => inv.id === id);
+      if (!invoice) return;
+      const idx  = STATUSES.findIndex(s => s.value === invoice.status);
+      const next = STATUSES[(idx + 1) % STATUSES.length];
+      try {
+        await updateRecord('invoices', id, { status: next.value });
+        invoice.status = next.value;
+        renderStats();
+        renderTable(applyFilters());
+        toast(`Status changed to ${next.label}.`, 'success');
+      } catch (err) {
+        console.error('[Invoices] Status update error:', err);
+        toast('Failed to update status.', 'error');
+      }
+    });
+  });
 }
 
 /* ── Row HTML ───────────────────────────────────────────────────────────── */
@@ -221,9 +242,11 @@ function rowHTML(inv) {
         ${dueAt}${isOverdue ? ' ⚠' : ''}
       </td>
 
-      <!-- Status badge -->
+      <!-- Status badge — click to cycle through statuses -->
       <td class="td-cell text-center">
-        <span class="badge ${status.badge}">${status.label}</span>
+        <button class="badge ${status.badge} cursor-pointer"
+                data-action="status-btn" data-id="${inv.id}"
+                title="Click to change status">${status.label}</button>
       </td>
 
       <!-- Actions -->
