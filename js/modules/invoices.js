@@ -170,9 +170,11 @@ function renderTable(invoices) {
 
   tbody.querySelectorAll('[data-action="pdf"]').forEach(btn =>
     btn.addEventListener('click', () => {
-      const inv = _invoices.find(i => i.id === Number(btn.dataset.id));
+      const inv     = _invoices.find(i => i.id === Number(btn.dataset.id));
       if (!inv) return;
-      const ok = printInvoice(inv, clientName(inv.clientId), projectName(inv.projectId));
+      const client  = _clients.find(c => c.id === Number(inv.clientId))  ?? null;
+      const project = _projects.find(p => p.id === Number(inv.projectId)) ?? null;
+      const ok = printInvoice(inv, client, project);
       if (!ok) toast('Popup blocked — please allow popups for this site.', 'warning');
     })
   );

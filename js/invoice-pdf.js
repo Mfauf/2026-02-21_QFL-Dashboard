@@ -41,10 +41,12 @@ function esc(str) {
 /* ── Main export ─────────────────────────────────────────────────────────── */
 /**
  * @param {object} invoice
- * @param {string} clientName
- * @param {string} [projectName]
+ * @param {object|null} client   — full client record (name, email, phone, …)
+ * @param {object|null} project  — full project record (name, category, notes, …)
  */
-export function printInvoice(invoice, clientName, projectName) {
+export function printInvoice(invoice, client, project) {
+  const clientName  = client?.name  ?? '—';
+  const projectName = project?.name ?? null;
   const s       = getSettings();
   const profile = s.profile;
   const invSet  = s.invoice;
@@ -85,12 +87,23 @@ export function printInvoice(invoice, clientName, projectName) {
     : '';
 
   /* ── Project row ────────────────────────────────────────────────────────── */
-  const projectRow = projectName && projectName !== '—'
+  const projectRow = projectName
     ? `<tr>
          <td style="padding:.6rem 0;color:#94a3b8;font-size:.8125rem;white-space:nowrap;width:9rem;">Project</td>
          <td style="padding:.6rem 0;color:#1e293b;font-size:.8125rem;font-weight:500;text-align:right;">${esc(projectName)}</td>
        </tr>`
     : '';
+
+  /* ── Description cell: project category + project notes ─────────────────── */
+  const descriptionHTML = (() => {
+    const category = project?.category ? `<span style="font-weight:600;color:#1e293b;">${esc(project.category)}</span>` : null;
+    const desc     = project?.notes    ? `<span style="display:block;margin-top:.35rem;font-size:.8125rem;color:#64748b;white-space:pre-wrap;">${esc(project.notes)}</span>` : null;
+    if (category || desc) return [category, desc].filter(Boolean).join('');
+    // Fallback to invoice notes first line, or placeholder
+    return invoice.notes
+      ? `<span style="font-weight:500;">${esc(invoice.notes.split('\n')[0])}</span>`
+      : `<span style="color:#94a3b8;font-style:italic;">Professional services</span>`;
+  })();
 
   /* ── PAID watermark ─────────────────────────────────────────────────────── */
   const watermark = isPaid
@@ -123,6 +136,9 @@ export function printInvoice(invoice, clientName, projectName) {
       html, body { background: #fff !important; }
       .no-print { display: none !important; }
       .page { padding: 2rem 2.5rem; }
+      /* Remove browser-injected URL / page-number header & footer */
+      @page { margin: 0; size: A4; }
+      body  { padding: 0.6cm; }
     }
     .divider { border: none; border-top: 1px solid #e2e8f0; margin: 2rem 0; }
     table { border-collapse: collapse; width: 100%; }
@@ -195,6 +211,8 @@ export function printInvoice(invoice, clientName, projectName) {
         <p style="font-size:.7rem;font-weight:700;text-transform:uppercase;letter-spacing:.1em;
                   color:#94a3b8;margin-bottom:.75rem;">Bill To</p>
         <p style="font-size:1rem;font-weight:600;color:#0f172a;">${esc(clientName)}</p>
+        ${client?.email ? `<p style="font-size:.8125rem;color:#64748b;margin-top:.3rem;">${esc(client.email)}</p>` : ''}
+        ${client?.phone ? `<p style="font-size:.8125rem;color:#64748b;margin-top:.15rem;">${esc(client.phone)}</p>` : ''}
       </div>
 
       <!-- Invoice meta -->
@@ -241,9 +259,7 @@ export function printInvoice(invoice, clientName, projectName) {
       <tbody>
         <tr>
           <td style="padding:1.1rem 1.25rem;font-size:.9375rem;color:#1e293b;border-bottom:1px solid #f1f5f9;">
-            ${invoice.notes
-              ? `<span style="font-weight:500;">${esc(invoice.notes.split('\n')[0])}</span>`
-              : `<span style="color:#94a3b8;font-style:italic;">Professional services</span>`}
+            ${descriptionHTML}
           </td>
           <td style="padding:1.1rem 1.25rem;text-align:right;font-size:.9375rem;
                      font-weight:600;color:#1e293b;border-bottom:1px solid #f1f5f9;
