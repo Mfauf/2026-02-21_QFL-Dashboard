@@ -211,15 +211,12 @@ function rowHTML(c) {
       <!-- Status — clickable badge opens quick-change dropdown -->
       <td class="td-cell">
         <div class="relative inline-block">
-          <button class="badge ${badgeCls} flex items-center gap-1 cursor-pointer"
+          <button class="badge ${badgeCls} cursor-pointer"
                   data-action="status-btn" data-id="${c.id}"
                   title="Change status">
             ${statusLabel}
-            <svg class="w-3 h-3 opacity-70" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"/>
-            </svg>
           </button>
-          <div class="status-menu hidden absolute left-0 top-full mt-1 z-20 rounded-lg shadow-lg overflow-hidden"
+          <div class="status-menu hidden absolute left-0 bottom-full mb-1 z-20 rounded-lg shadow-lg overflow-hidden"
                style="min-width:7rem; background:var(--clr-surface-2); border:1px solid var(--clr-border)"
                data-status-menu="${c.id}">
             <button class="w-full text-left px-3 py-2 text-xs font-medium flex items-center gap-2
