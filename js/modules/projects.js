@@ -16,6 +16,7 @@ import { addRecord, getAllRecords, updateRecord, deleteRecord } from '../db.js';
 import { toast, openModal, openConfirm }                       from '../ui.js';
 import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce } from '../utils.js';
 import { getSettings }                                         from '../settings-store.js';
+import { navigate }                                            from '../router.js';
 
 /* ── Module state ───────────────────────────────────────────────────────── */
 let _projects  = [];   // all projects from DB
@@ -147,6 +148,20 @@ function renderTable(projects) {
   tbody.innerHTML = projects.map(p => rowHTML(p)).join('');
 
   // Bind row action buttons
+  tbody.querySelectorAll('[data-action="create-invoice"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const p = _projects.find(pr => pr.id === Number(btn.dataset.id));
+      if (!p) return;
+      sessionStorage.setItem('qfl_invoice_prefill', JSON.stringify({
+        clientId:  p.clientId  ?? null,
+        projectId: p.id,
+        amount:    p.amount    ?? '',
+        notes:     p.notes     ?? '',
+        dueAt:     p.endDate   ?? '',
+      }));
+      navigate('invoices');
+    });
+  });
   tbody.querySelectorAll('[data-action="edit"]').forEach(btn =>
     btn.addEventListener('click', () => openEditModal(Number(btn.dataset.id)))
   );
@@ -227,6 +242,16 @@ function rowHTML(p) {
       <!-- Actions -->
       <td class="td-cell text-right">
         <div class="flex items-center justify-end gap-1">
+          <!-- Create Invoice -->
+          <button data-action="create-invoice" data-id="${p.id}"
+                  class="btn btn-icon" title="Create Invoice for this project"
+                  aria-label="Create invoice for ${escapeHtml(p.name)}">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586
+                   a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+          </button>
           <button data-action="edit" data-id="${p.id}"
                   class="btn btn-icon" title="Edit project" aria-label="Edit ${escapeHtml(p.name)}">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

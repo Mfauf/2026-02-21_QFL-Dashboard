@@ -58,6 +58,13 @@ async function loadInvoices() {
     ]);
     renderStats();
     renderTable(applyFilters());
+
+    // Consume project-prefill set by projects.js "Create Invoice" button
+    const raw = sessionStorage.getItem('qfl_invoice_prefill');
+    if (raw) {
+      sessionStorage.removeItem('qfl_invoice_prefill');
+      try { openAddModal(JSON.parse(raw)); } catch (_) { openAddModal(); }
+    }
   } catch (err) {
     console.error('[Invoices] Load error:', err);
     toast('Failed to load invoices.', 'error');
@@ -402,12 +409,12 @@ function formHTML(invoice = {}, autoNumber = '') {
 }
 
 /* ── Add modal ──────────────────────────────────────────────────────────── */
-function openAddModal() {
+function openAddModal(prefill = {}) {
   const autoNum = nextInvoiceNumber();
 
   openModal({
     title:       'Create Invoice',
-    bodyHTML:    formHTML({}, autoNum),
+    bodyHTML:    formHTML(prefill, autoNum),
     submitLabel: 'Create Invoice',
     onSubmit: async (fd) => {
       const clientId = fd.get('clientId');
