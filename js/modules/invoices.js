@@ -135,8 +135,8 @@ function miniStat(label, value, color) {
   };
   const c = map[color];
   return `
-    <div class="card flex items-center gap-3 px-4 py-3" style="border-color:${c.border}; background:${c.bg}">
-      <span class="text-xl font-bold" style="color:${c.text}">${value}</span>
+    <div class="card flex flex-col gap-1 px-4 py-3" style="border-color:${c.border}; background:${c.bg}">
+      <span class="text-xl font-bold leading-tight whitespace-nowrap" style="color:${c.text}">${value}</span>
       <span class="text-xs font-semibold uppercase tracking-wider text-[var(--clr-text-muted)]">${label}</span>
     </div>`;
 }

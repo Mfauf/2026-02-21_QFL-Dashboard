@@ -60,11 +60,13 @@ export function openModal({ title, bodyHTML, onSubmit, submitLabel = 'Save' }) {
   const form       = document.getElementById('modal-form');
 
   modalTitle.textContent = title;
+
+  // Reset any previous form state BEFORE injecting new content,
+  // so that dynamically-set values (edit modal) are not wiped.
+  form.reset?.();
+
   modalBody.innerHTML    = bodyHTML;
   submitBtn.textContent  = submitLabel;
-
-  // Reset form state
-  form.reset?.();
   submitBtn.disabled = false;
 
   // Attach submit handler
