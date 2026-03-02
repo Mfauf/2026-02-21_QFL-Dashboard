@@ -65,6 +65,12 @@ export function openModal({ title, bodyHTML, onSubmit, submitLabel = 'Save' }) {
   // so that dynamically-set values (edit modal) are not wiped.
   form.reset?.();
 
+  // Clear any previous error banner
+  const banner   = document.getElementById('modal-error-banner');
+  const bannerTx = document.getElementById('modal-error-text');
+  if (banner)   banner.style.display = 'none';
+  if (bannerTx) bannerTx.textContent = '';
+
   modalBody.innerHTML    = bodyHTML;
   submitBtn.textContent  = submitLabel;
   submitBtn.disabled = false;
@@ -72,6 +78,12 @@ export function openModal({ title, bodyHTML, onSubmit, submitLabel = 'Save' }) {
   // Attach submit handler
   const handleSubmit = async (e) => {
     e.preventDefault();
+
+    // Hide any previous error
+    const banner   = document.getElementById('modal-error-banner');
+    const bannerTx = document.getElementById('modal-error-text');
+    if (banner) banner.style.display = 'none';
+
     submitBtn.disabled = true;
     submitBtn.textContent = 'Saving…';
     try {
@@ -81,6 +93,14 @@ export function openModal({ title, bodyHTML, onSubmit, submitLabel = 'Save' }) {
       console.error('[Modal] Submit error:', err);
       submitBtn.disabled = false;
       submitBtn.textContent = submitLabel;
+
+      // Show the error message inside the modal
+      if (banner && bannerTx) {
+        bannerTx.textContent = err?.message || 'Please fill in all required fields.';
+        banner.style.display = 'flex';
+        // Scroll the error into view
+        banner.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
     }
   };
 
