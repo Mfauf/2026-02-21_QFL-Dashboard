@@ -2,7 +2,8 @@
  * finances.js — Finances module (CRUDS)
  *
  * Schema: { id, type('income'|'outcome'), clientId?, projectId?,
- *           category, amount, date, note, createdAt }
+ *           category, amount, date, note, createdAt,
+ *           recurring('none'|'weekly'|'monthly'|'yearly'), recurringId? }
  *
  * Operations:
  *  C — Create  : openAddModal()
@@ -52,12 +53,62 @@ async function loadTransactions() {
       getAllRecords('clients'),
       getAllRecords('projects'),
     ]);
+    const added = await processRecurring();
+    if (added > 0) {
+      _transactions = await getAllRecords('transactions');
+    }
     renderStats();
     renderTable(applyFilters());
   } catch (err) {
     console.error('[Finances] Load error:', err);
     toast('Failed to load transactions.', 'error');
   }
+}
+
+/* ── Auto-generate recurring entries ────────────────────────────────────── */
+async function processRecurring() {
+  const today   = new Date().toISOString().slice(0, 10);
+  // Only parent templates (have a recur rule but are NOT themselves auto-generated)
+  const parents = _transactions.filter(
+    t => t.recurring && t.recurring !== 'none' && !t.recurringId
+  );
+  let added = 0;
+
+  for (const parent of parents) {
+    if (!parent.date) continue;
+
+    // Latest date among the parent itself and all its children
+    const children  = _transactions.filter(t => t.recurringId === parent.id);
+    const allDates  = [parent.date, ...children.map(c => c.date)].filter(Boolean).sort();
+    let   lastDate  = allDates.at(-1);
+    let   next      = nextRecurDate(lastDate, parent.recurring);
+
+    while (next <= today) {
+      await addRecord('transactions', {
+        type:        parent.type,
+        category:    parent.category,
+        amount:      parent.amount,
+        date:        next,
+        clientId:    parent.clientId   ?? null,
+        projectId:   parent.projectId  ?? null,
+        note:        parent.note       ?? '',
+        recurring:   'none',
+        recurringId: parent.id,
+      });
+      lastDate = next;
+      next     = nextRecurDate(next, parent.recurring);
+      added++;
+    }
+  }
+  return added;
+}
+
+function nextRecurDate(dateStr, period) {
+  const d = new Date(dateStr + 'T00:00:00');
+  if (period === 'weekly')  d.setDate(d.getDate() + 7);
+  if (period === 'monthly') d.setMonth(d.getMonth() + 1);
+  if (period === 'yearly')  d.setFullYear(d.getFullYear() + 1);
+  return d.toISOString().slice(0, 10);
 }
 
 /* ── Lookup helpers ─────────────────────────────────────────────────────── */
@@ -68,8 +119,10 @@ const projectName = (id) => id ? (_projects.find(p => p.id === Number(id))?.name
 function applyFilters() {
   let list = _transactions;
 
-  if (_filter !== 'all') {
+  if (_filter === 'income' || _filter === 'outcome') {
     list = list.filter(t => t.type === _filter);
+  } else if (_filter === 'recurring') {
+    list = list.filter(t => t.recurring && t.recurring !== 'none');
   }
 
   if (_searchQ.trim()) {
@@ -183,7 +236,18 @@ function rowHTML(tx) {
 
       <!-- Category + note -->
       <td class="td-cell">
-        <span class="font-medium text-sm text-[var(--clr-text)]">${escapeHtml(tx.category ?? '—')}</span>
+        <div class="flex items-center flex-wrap gap-1.5">
+          <span class="font-medium text-sm text-[var(--clr-text)]">${escapeHtml(tx.category ?? '—')}</span>
+          ${tx.recurring && tx.recurring !== 'none'
+            ? `<span class="inline-flex items-center gap-0.5 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                     style="background:var(--clr-primary-dim);color:var(--clr-primary-light)">
+                 ↻ ${tx.recurring}
+               </span>`
+            : tx.recurringId
+              ? `<span class="inline-flex items-center text-[10px] font-medium px-1.5 py-0.5 rounded-full"
+                       style="background:var(--clr-surface-3);color:var(--clr-text-faint)">auto</span>`
+              : ''}
+        </div>
         ${tx.note
           ? `<p class="text-xs text-[var(--clr-text-faint)] mt-0.5 truncate max-w-[14rem]">${escapeHtml(tx.note)}</p>`
           : ''}
@@ -334,6 +398,23 @@ function formHTML(tx = {}) {
         </div>
       </div>
 
+      <!-- Recurring -->
+      <div>
+        <label class="form-label" for="tf-recurring">Recurring</label>
+        <select id="tf-recurring" name="recurring" class="form-select"
+                ${tx.recurringId ? 'disabled title="Cannot change a schedule on an auto-generated entry"' : ''}>
+          <option value="none"    ${sel(tx.recurring ?? 'none', 'none')}>— No recurrence —</option>
+          <option value="weekly"  ${sel(tx.recurring, 'weekly')}>Weekly</option>
+          <option value="monthly" ${sel(tx.recurring, 'monthly')}>Monthly</option>
+          <option value="yearly"  ${sel(tx.recurring, 'yearly')}>Yearly</option>
+        </select>
+        <p class="text-xs mt-1.5" style="color:var(--clr-text-faint)">
+          ${tx.recurringId
+            ? '↻ Auto-generated from a recurring parent transaction.'
+            : 'Future entries will be auto-generated from the start date each time you open Finances.'}
+        </p>
+      </div>
+
       <!-- Note -->
       <div>
         <label class="form-label" for="tf-note">Note</label>
@@ -363,11 +444,13 @@ function openAddModal() {
       const data = {
         type,
         category,
-        amount:    Number(amount),
-        date:      fd.get('date')      || null,
-        clientId:  fd.get('clientId')  ? Number(fd.get('clientId'))  : null,
-        projectId: fd.get('projectId') ? Number(fd.get('projectId')) : null,
-        note:      fd.get('note')?.trim() || '',
+        amount:     Number(amount),
+        date:       fd.get('date')      || null,
+        clientId:   fd.get('clientId')  ? Number(fd.get('clientId'))  : null,
+        projectId:  fd.get('projectId') ? Number(fd.get('projectId')) : null,
+        note:       fd.get('note')?.trim() || '',
+        recurring:  fd.get('recurring') || 'none',
+        recurringId: null,
       };
 
       await addRecord('transactions', data);
@@ -397,11 +480,13 @@ async function openEditModal(id) {
       const updates = {
         type,
         category,
-        amount:    Number(amount),
-        date:      fd.get('date')      || null,
-        clientId:  fd.get('clientId')  ? Number(fd.get('clientId'))  : null,
-        projectId: fd.get('projectId') ? Number(fd.get('projectId')) : null,
-        note:      fd.get('note')?.trim() || '',
+        amount:      Number(amount),
+        date:        fd.get('date')      || null,
+        clientId:    fd.get('clientId')  ? Number(fd.get('clientId'))  : null,
+        projectId:   fd.get('projectId') ? Number(fd.get('projectId')) : null,
+        note:        fd.get('note')?.trim() || '',
+        recurring:   tx.recurringId ? 'none' : (fd.get('recurring') || tx.recurring || 'none'),
+        recurringId: tx.recurringId ?? null,
       };
 
       await updateRecord('transactions', id, updates);
@@ -413,12 +498,24 @@ async function openEditModal(id) {
 
 /* ── Delete ─────────────────────────────────────────────────────────────── */
 function confirmDelete(id, label) {
+  const tx         = _transactions.find(t => t.id === id);
+  const isParent   = tx?.recurring && tx.recurring !== 'none' && !tx.recurringId;
+  const children   = isParent ? _transactions.filter(t => t.recurringId === id) : [];
+  const childCount = children.length;
+
+  const extraMsg = isParent && childCount > 0
+    ? ` This will also delete ${childCount} auto-generated entr${childCount > 1 ? 'ies' : 'y'}.`
+    : '';
+
   openConfirm({
     title:        'Delete Transaction',
-    message:      `Are you sure you want to delete "${label}"? This action cannot be undone.`,
+    message:      `Are you sure you want to delete "${label}"?${extraMsg} This cannot be undone.`,
     confirmLabel: 'Delete',
     onConfirm: async () => {
       await deleteRecord('transactions', id);
+      if (childCount > 0) {
+        await Promise.all(children.map(c => deleteRecord('transactions', c.id)));
+      }
       toast(`Transaction "${label}" deleted.`, 'info');
       await loadTransactions();
     },
@@ -492,10 +589,11 @@ function shellHTML() {
         </div>
 
         <!-- Type filter pills -->
-        <div class="flex items-center gap-2 shrink-0">
+        <div class="flex items-center gap-2 shrink-0 flex-wrap">
           <button class="filter-btn filter-active" data-filter="all">All</button>
           <button class="filter-btn" data-filter="income">Income</button>
           <button class="filter-btn" data-filter="outcome">Expenses</button>
+          <button class="filter-btn" data-filter="recurring">↻ Recurring</button>
         </div>
       </div>
 
