@@ -21,6 +21,7 @@ import { getOrCreateUID, openPeer, connectAndSync } from '../sync.js';
 
 /* ── Module state ───────────────────────────────────────────────────────── */
 let _container = null;
+let _onSettingsSynced = null;
 
 /* ── Mount / unmount ────────────────────────────────────────────────────── */
 export function mount(container) {
@@ -35,9 +36,17 @@ export function mount(container) {
     if (el) el.value = uid;
     openPeer(uid, updateSyncStatus);
   }).catch(err => updateSyncStatus(err.message, 'error'));
+
+  // Re-populate form fields when a remote sync merges incoming settings
+  _onSettingsSynced = () => populate();
+  window.addEventListener('qfl:settings-synced', _onSettingsSynced);
 }
 
 export function unmount() {
+  if (_onSettingsSynced) {
+    window.removeEventListener('qfl:settings-synced', _onSettingsSynced);
+    _onSettingsSynced = null;
+  }
   _container = null;
   // Peer stays alive so incoming syncs work after navigating away
 }
@@ -396,6 +405,7 @@ function bindAll() {
     saveSettings({ sync: { peerUID } });
     try {
       await connectAndSync(peerUID, updateSyncStatus);
+      populate();                           // reflect any synced settings in the form
       updateSyncStatus('Sync complete — all data merged!', 'success');
       toast('Sync complete!', 'success');
     } catch (err) {

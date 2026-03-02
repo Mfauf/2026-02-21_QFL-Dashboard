@@ -27,6 +27,7 @@
  */
 
 import { getAllRecords, clearStore, bulkPutRecords, getMetaValue, setMetaValue } from './db.js';
+import { getSettings, saveSettings } from './settings-store.js';
 
 const STORES = ['clients', 'projects', 'transactions', 'invoices'];
 
@@ -58,7 +59,17 @@ export async function getOrCreateUID() {
 
 async function exportAll() {
   const results = await Promise.all(STORES.map(s => getAllRecords(s)));
-  return Object.fromEntries(STORES.map((s, i) => [s, results[i]]));
+  const data = Object.fromEntries(STORES.map((s, i) => [s, results[i]]));
+
+  // Include settings, but strip the device-specific peerUID
+  const settings = getSettings();
+  const settingsToSync = {
+    ...settings,
+    sync: { peerUID: '' },   // stripped — each device keeps its own
+  };
+  data._settings = settingsToSync;
+
+  return data;
 }
 
 /**
@@ -87,6 +98,20 @@ function mergeSnapshots(local, remote) {
 async function applyMerge(incoming) {
   const local  = await exportAll();
   const merged = mergeSnapshots(local, incoming);
+
+  // Merge settings: incoming wins on profile/invoice/categories,
+  // but local keeps its own appearance (theme) and sync (peerUID)
+  if (incoming._settings) {
+    const localSettings = getSettings();
+    saveSettings({
+      ...incoming._settings,
+      appearance: localSettings.appearance,  // keep local theme pref
+      sync:       localSettings.sync,        // keep local peerUID
+    });
+    // Notify any open settings page to re-populate its fields
+    window.dispatchEvent(new CustomEvent('qfl:settings-synced'));
+  }
+
   for (const store of STORES) {
     await clearStore(store);
     await bulkPutRecords(store, merged[store]);
