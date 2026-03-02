@@ -181,14 +181,29 @@ export function initUI() {
   document.getElementById('modal-cancel')?.addEventListener('click', closeModal);
 
   // Escape key closes the topmost open dialog
+  // "N" key opens the Add form for the current view
   document.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    const confirm = document.getElementById('confirm-backdrop');
-    if (confirm && !confirm.classList.contains('hidden')) {
-      confirm.classList.remove('open');
-      setTimeout(() => confirm.classList.add('hidden'), 200);
+    // Ignore when typing inside any input/textarea/select or contenteditable
+    const tag = document.activeElement?.tagName;
+    const isEditing = tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT'
+                   || document.activeElement?.isContentEditable;
+
+    if (e.key === 'Escape') {
+      const confirm = document.getElementById('confirm-backdrop');
+      if (confirm && !confirm.classList.contains('hidden')) {
+        confirm.classList.remove('open');
+        setTimeout(() => confirm.classList.add('hidden'), 200);
+        return;
+      }
+      closeModal();
       return;
     }
-    closeModal();
+
+    if ((e.key === 'n' || e.key === 'N') && !isEditing && !e.ctrlKey && !e.metaKey) {
+      const addBtn = document.querySelector(
+        '#btn-add-client, #btn-add-project, #btn-add-invoice, #btn-add-transaction'
+      );
+      addBtn?.click();
+    }
   });
 }
