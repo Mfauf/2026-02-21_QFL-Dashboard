@@ -15,6 +15,7 @@
 import { addRecord, getAllRecords, updateRecord, deleteRecord } from '../db.js';
 import { toast, openModal, openConfirm }                       from '../ui.js';
 import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce } from '../utils.js';
+import { getSettings }                                         from '../settings-store.js';
 
 /* ── Module state ───────────────────────────────────────────────────────── */
 let _projects  = [];   // all projects from DB
@@ -264,9 +265,12 @@ function formHTML(project = {}) {
         </div>
         <div>
           <label class="form-label" for="pf-category">Category</label>
-          <input id="pf-category" name="category" type="text" class="form-input"
-                 placeholder="e.g. Web Design, Mobile App…"
+          <input id="pf-category" name="category" type="text" list="pf-category-list"
+                 class="form-input" placeholder="e.g. Web Design, Mobile App…"
                  value="${v('category')}" autocomplete="off"/>
+          <datalist id="pf-category-list">
+            ${getSettings().categories.project.map(c => `<option value="${c}">`).join('')}
+          </datalist>
         </div>
       </div>
 

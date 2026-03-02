@@ -15,6 +15,7 @@
 import { addRecord, getAllRecords, updateRecord, deleteRecord } from '../db.js';
 import { toast, openModal, openConfirm }                       from '../ui.js';
 import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce } from '../utils.js';
+import { getSettings }                                         from '../settings-store.js';
 
 /* ── Module state ───────────────────────────────────────────────────────── */
 let _transactions = [];
@@ -24,10 +25,9 @@ let _filter       = 'all';   // 'all' | 'income' | 'outcome'
 let _searchQ      = '';
 let _container    = null;
 
-/* ── Suggested categories ───────────────────────────────────────────────── */
-const INCOME_CATS  = ['Project Payment', 'Consulting', 'Retainer', 'Bonus', 'Refund', 'Other'];
-const OUTCOME_CATS = ['Software / Tools', 'Hardware', 'Marketing', 'Office', 'Freelancer Fee',
-                      'Tax', 'Hosting', 'Transport', 'Education', 'Other'];
+/* ── Categories — read live from settings-store so user edits are reflected ─ */
+const incomeCats  = () => getSettings().categories.income;
+const expenseCats = () => getSettings().categories.expense;
 
 /* ── Mount / unmount ────────────────────────────────────────────────────── */
 export async function mount(container) {
@@ -240,7 +240,7 @@ function formHTML(tx = {}) {
   const sel = (val, opt) => String(val) === String(opt) ? 'selected' : '';
 
   const isIncome  = tx.type === 'income';
-  const cats      = isIncome ? INCOME_CATS : OUTCOME_CATS;
+  const cats      = isIncome ? incomeCats() : expenseCats();
 
   const clientOptions = _clients
     .map(c => `<option value="${c.id}" ${sel(tx.clientId, c.id)}>
@@ -294,7 +294,7 @@ function formHTML(tx = {}) {
                  class="form-input" placeholder="e.g. Project Payment"
                  value="${v('category')}" required autocomplete="off"/>
           <datalist id="tf-category-list">
-            ${[...INCOME_CATS, ...OUTCOME_CATS]
+            ${[...incomeCats(), ...expenseCats()]
               .filter((c, i, arr) => arr.indexOf(c) === i)
               .map(c => `<option value="${c}">`)
               .join('')}

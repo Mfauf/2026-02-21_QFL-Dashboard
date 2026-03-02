@@ -1,0 +1,88 @@
+/**
+ * settings-store.js — Thin localStorage wrapper for app settings.
+ *
+ * Imported by:
+ *   - js/modules/settings.js  (read + write, full UI)
+ *   - js/modules/projects.js  (read project categories for datalist)
+ *   - js/modules/finances.js  (read income/expense categories for datalist)
+ *
+ * All settings are stored under the key `qfl_settings` as a JSON object.
+ */
+
+const STORAGE_KEY = 'qfl_settings';
+
+/** ── Default values ────────────────────────────────────────────────────── */
+export const DEFAULTS = {
+  profile: {
+    name:     '',
+    company:  '',
+    email:    '',
+    phone:    '',
+    tagline:  '',
+  },
+  invoice: {
+    prefix:       'INV-',
+    paymentTerms: 'Payment is due within 30 days of the invoice date.',
+  },
+  categories: {
+    project: [
+      'Web Design', 'Mobile App', 'Branding', 'Consulting',
+      'SEO', 'UI/UX', 'Development', 'Other',
+    ],
+    income: [
+      'Project Payment', 'Consulting', 'Retainer', 'Bonus', 'Refund', 'Other',
+    ],
+    expense: [
+      'Software / Tools', 'Hardware', 'Marketing', 'Office',
+      'Freelancer Fee', 'Tax', 'Hosting', 'Transport', 'Education', 'Other',
+    ],
+  },
+};
+
+/** ── Read ─────────────────────────────────────────────────────────────── */
+
+/**
+ * Returns the current settings, merged over the defaults.
+ * Always returns a complete object — safe to destructure any section.
+ * @returns {typeof DEFAULTS}
+ */
+export function getSettings() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (!raw) return structuredClone(DEFAULTS);
+    return deepMerge(structuredClone(DEFAULTS), JSON.parse(raw));
+  } catch {
+    return structuredClone(DEFAULTS);
+  }
+}
+
+/** ── Write ────────────────────────────────────────────────────────────── */
+
+/**
+ * Merge a partial settings object into the stored settings and persist.
+ * @param {Partial<typeof DEFAULTS>} patch
+ * @returns {typeof DEFAULTS} the new full settings object
+ */
+export function saveSettings(patch) {
+  const next = deepMerge(getSettings(), patch);
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
+  return next;
+}
+
+/** ── Helpers ──────────────────────────────────────────────────────────── */
+
+/**
+ * Deep-merges `source` into `target`.
+ * Arrays in source REPLACE (not concat) the array in target.
+ */
+function deepMerge(target, source) {
+  const out = { ...target };
+  for (const [k, v] of Object.entries(source)) {
+    if (v !== null && typeof v === 'object' && !Array.isArray(v)) {
+      out[k] = deepMerge(typeof target[k] === 'object' ? target[k] : {}, v);
+    } else {
+      out[k] = v;
+    }
+  }
+  return out;
+}

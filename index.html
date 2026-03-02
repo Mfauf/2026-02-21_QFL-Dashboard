@@ -273,6 +273,8 @@
              unmount as invoicesUnmount }         from './js/modules/invoices.js';
     import { mount as financesMount,
              unmount as financesUnmount }         from './js/modules/finances.js';
+    import { mount as settingsMount,
+             unmount as settingsUnmount }         from './js/modules/settings.js';
 
     /* Expose sidebar helpers to inline onclick attributes */
     window.openSidebar  = openSidebar;
@@ -303,6 +305,7 @@
     registerRoute('projects',  { mount: projectsMount,  unmount: projectsUnmount  });
     registerRoute('invoices',  { mount: invoicesMount,  unmount: invoicesUnmount  });
     registerRoute('finances',  { mount: financesMount,  unmount: financesUnmount  });
+    registerRoute('settings',  { mount: settingsMount,  unmount: settingsUnmount  });
 
     /* Stub placeholder for modules not yet implemented */
     const stub = (label) => ({
@@ -319,7 +322,7 @@
           </div>`;
       },
     });
-    registerRoute('settings',  stub('Settings'));
+    // settings route now registered above as a real module
 
     /* Init shared UI (modal close, escape key, confirm dialog) */
     initUI();
