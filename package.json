@@ -1,0 +1,30 @@
+{
+  "name": "2026-02-21_qfl-dashboard",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "build:css": "tailwindcss -i css/tailwind.src.css -o css/tailwind.css --minify",
+    "watch:css": "tailwindcss -i css/tailwind.src.css -o css/tailwind.css --watch",
+    "build": "npm run build:css",
+    "dev": "npm run watch:css"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Mfauf/2026-02-21_Gemini_QatarFreeLance-Dashboard.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/Mfauf/2026-02-21_Gemini_QatarFreeLance-Dashboard/issues"
+  },
+  "homepage": "https://github.com/Mfauf/2026-02-21_Gemini_QatarFreeLance-Dashboard#readme",
+  "dependencies": {
+    "chart.js": "^4.5.1"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
+  }
+}
