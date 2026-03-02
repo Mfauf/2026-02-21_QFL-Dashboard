@@ -182,3 +182,36 @@ export async function getByIndex(storeName, indexName, value) {
   const index = store.index(indexName);
   return promisify(index.getAll(value));
 }
+
+/**
+ * Clear ALL records from a store (keeps the store itself and its indexes).
+ * @param {string} storeName
+ * @returns {Promise<void>}
+ */
+export async function clearStore(storeName) {
+  const db = await openDB();
+  return promisify(db.transaction(storeName, 'readwrite').objectStore(storeName).clear());
+}
+
+/**
+ * Insert an array of records into a store in a single transaction.
+ * Each record has its `id` stripped so auto-increment assigns new IDs.
+ * @param {string} storeName
+ * @param {object[]} records
+ * @returns {Promise<void>}
+ */
+export async function bulkAddRecords(storeName, records) {
+  if (!records?.length) return;
+  const db  = await openDB();
+  const tx  = db.transaction(storeName, 'readwrite');
+  const st  = tx.objectStore(storeName);
+  for (const rec of records) {
+    const { id, ...rest } = rec;   // drop old id; let auto-increment assign new one
+    st.add(rest);
+  }
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror    = () => reject(tx.error);
+    tx.onabort    = () => reject(tx.error);
+  });
+}

@@ -7,15 +7,15 @@
  *  3. Project cats   — add / remove project category suggestions
  *  4. Income cats    — add / remove income category suggestions
  *  5. Expense cats   — add / remove expense category suggestions
- *  6. Data           — export all IndexedDB data as JSON
+ *  6. Data           — export JSON backup, import backup, delete all data + reset
  *
  * All settings persist in localStorage via settings-store.js.
  */
 
-import { getSettings, saveSettings }  from '../settings-store.js';
-import { getAllRecords }               from '../db.js';
-import { toast }                      from '../ui.js';
-import { escapeHtml }                 from '../utils.js';
+import { getSettings, saveSettings, DEFAULTS } from '../settings-store.js';
+import { getAllRecords, clearStore, bulkAddRecords } from '../db.js';
+import { toast, openConfirm }          from '../ui.js';
+import { escapeHtml }                  from '../utils.js';
 
 /* ── Module state ───────────────────────────────────────────────────────── */
 let _container = null;
@@ -138,6 +138,7 @@ function removeCategory(listId, value) {
 
 /* ── Export data ────────────────────────────────────────────────────────── */
 async function exportData() {
+
   const btn = _container?.querySelector('#btn-export');
   if (btn) { btn.disabled = true; btn.textContent = 'Exporting…'; }
 
@@ -173,6 +174,69 @@ async function exportData() {
   } finally {
     if (btn) { btn.disabled = false; btn.textContent = 'Export Data'; }
   }
+}
+
+/* ── Import data ────────────────────────────────────────────────────────── */
+async function importData(file) {
+  const btn = _container?.querySelector('#btn-import');
+  if (btn) { btn.disabled = true; btn.textContent = 'Importing…'; }
+
+  try {
+    const text    = await file.text();
+    const payload = JSON.parse(text);
+
+    // Basic shape validation
+    const STORES = ['clients', 'projects', 'transactions', 'invoices'];
+    const missing = STORES.filter(s => !Array.isArray(payload[s]));
+    if (missing.length) {
+      throw new Error(`Invalid backup file — missing: ${missing.join(', ')}.`);
+    }
+
+    // Clear all stores then bulk-insert
+    await Promise.all(STORES.map(s => clearStore(s)));
+    await Promise.all(STORES.map(s => bulkAddRecords(s, payload[s])));
+
+    // Restore settings if present (keep current avatar if backup has none)
+    if (payload.settings && typeof payload.settings === 'object') {
+      saveSettings(payload.settings);
+      populate();                        // re-populate form fields
+      window.refreshSidebarProfile?.();
+    }
+
+    const total = STORES.reduce((n, s) => n + (payload[s]?.length ?? 0), 0);
+    toast(`Import complete — ${total} records restored.`, 'success');
+  } catch (err) {
+    console.error('[Settings] Import error:', err);
+    toast(err.message || 'Import failed. Check the file and try again.', 'error');
+  } finally {
+    // Reset the file input so the same file can be re-selected
+    const input = _container?.querySelector('#import-file-input');
+    if (input) input.value = '';
+    if (btn) { btn.disabled = false; btn.textContent = 'Import Backup'; }
+  }
+}
+
+/* ── Reset / delete all data ────────────────────────────────────────────── */
+function resetAllData() {
+  openConfirm({
+    title:        'Delete All Data',
+    message:      'This will permanently erase ALL clients, projects, invoices, transactions and settings. This cannot be undone. Are you absolutely sure?',
+    confirmLabel: 'Delete Everything',
+    onConfirm: async () => {
+      try {
+        await Promise.all(
+          ['clients', 'projects', 'transactions', 'invoices'].map(s => clearStore(s))
+        );
+        localStorage.removeItem('qfl_settings');
+        window.refreshSidebarProfile?.();
+        populate();   // reset form fields to defaults
+        toast('All data deleted. App has been reset to defaults.', 'info');
+      } catch (err) {
+        console.error('[Settings] Reset error:', err);
+        toast('Reset failed. Please try again.', 'error');
+      }
+    },
+  });
 }
 
 /* ── Bind all listeners ─────────────────────────────────────────────────── */
@@ -259,6 +323,18 @@ function bindAll() {
 
   // ── Export
   _container.querySelector('#btn-export')?.addEventListener('click', exportData);
+
+  // ── Import: button opens hidden file picker
+  _container.querySelector('#btn-import')?.addEventListener('click', () => {
+    _container.querySelector('#import-file-input')?.click();
+  });
+  _container.querySelector('#import-file-input')?.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (file) importData(file);
+  });
+
+  // ── Reset all data
+  _container.querySelector('#btn-reset-all')?.addEventListener('click', resetAllData);
 }
 
 /* ── Shell HTML ─────────────────────────────────────────────────────────── */
@@ -404,16 +480,74 @@ function shellHTML() {
       ════════════════════════════════════════════════════════════ -->
       <div class="card p-6">
         <h3 class="text-base font-semibold text-[var(--clr-text)] mb-1">Data</h3>
-        <p class="text-sm text-[var(--clr-text-faint)] mb-5">
-          Export all your data from IndexedDB as a JSON backup file.
+        <p class="text-sm text-[var(--clr-text-faint)] mb-6">
+          Back up, restore, or permanently erase all your dashboard data.
         </p>
-        <button id="btn-export" class="btn btn-ghost flex items-center gap-2">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-          </svg>
-          Export Data
-        </button>
+
+        <div class="space-y-5">
+
+          <!-- Export -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3
+                      p-4 rounded-xl" style="background:var(--clr-surface-2)">
+            <div>
+              <p class="text-sm font-medium text-[var(--clr-text)]">Export Backup</p>
+              <p class="text-xs mt-0.5" style="color:var(--clr-text-faint)">
+                Download all clients, projects, invoices, transactions and settings as a JSON file.
+              </p>
+            </div>
+            <button id="btn-export" class="btn btn-ghost shrink-0 flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+              </svg>
+              Export Data
+            </button>
+          </div>
+
+          <!-- Import -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3
+                      p-4 rounded-xl" style="background:var(--clr-surface-2)">
+            <div>
+              <p class="text-sm font-medium text-[var(--clr-text)]">Import Backup</p>
+              <p class="text-xs mt-0.5" style="color:var(--clr-text-faint)">
+                Restore data from a previously exported JSON file.
+                Existing data will be replaced.
+              </p>
+            </div>
+            <!-- Hidden file input -->
+            <input id="import-file-input" type="file" accept=".json,application/json" class="hidden"/>
+            <button id="btn-import" class="btn btn-ghost shrink-0 flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4 4l4-4m0 0l4 4m-4-4v12"/>
+              </svg>
+              Import Backup
+            </button>
+          </div>
+
+          <!-- Danger zone -->
+          <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3
+                      p-4 rounded-xl"
+               style="background:var(--clr-danger-bg); border:1px solid var(--clr-danger-ring)">
+            <div>
+              <p class="text-sm font-semibold" style="color:var(--clr-danger)">Delete All Data</p>
+              <p class="text-xs mt-0.5" style="color:var(--clr-text-faint)">
+                Permanently erase every record and reset all settings.
+                This action <strong style="color:var(--clr-danger)">cannot be undone</strong>.
+              </p>
+            </div>
+            <button id="btn-reset-all" class="btn btn-danger shrink-0 flex items-center gap-2">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0
+                     01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0
+                     00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+              </svg>
+              Delete Everything
+            </button>
+          </div>
+
+        </div>
       </div>
 
     </div>`;
