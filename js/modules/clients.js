@@ -241,7 +241,7 @@ function rowHTML(c) {
       </td>
 
       <!-- Status — clickable badge opens floating fixed-position menu -->
-      <td class="td-cell">
+      <td class="td-cell text-center">
         <button class="badge ${badgeCls} cursor-pointer"
                 data-action="status-btn" data-id="${c.id}"
                 title="Change status">
