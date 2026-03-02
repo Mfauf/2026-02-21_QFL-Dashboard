@@ -202,10 +202,16 @@ function renderTable(invoices) {
       const next = STATUSES[(idx + 1) % STATUSES.length];
       try {
         await updateRecord('invoices', id, { status: next.value });
+        const wasPaid = invoice.status === 'paid';
         invoice.status = next.value;
         renderStats();
         renderTable(applyFilters());
-        toast(`Status changed to ${next.label}.`, 'success');
+        if (next.value === 'paid' && !wasPaid) {
+          await createPaidTransaction(invoice);
+          toast('Status changed to Paid — income transaction added.', 'success');
+        } else {
+          toast(`Status changed to ${next.label}.`, 'success');
+        }
       } catch (err) {
         console.error('[Invoices] Status update error:', err);
         toast('Failed to update status.', 'error');
@@ -408,6 +414,21 @@ function formHTML(invoice = {}, autoNumber = '') {
     </div>`;
 }
 
+/* ── Auto-create income transaction when invoice is marked paid ─────────── */
+async function createPaidTransaction(invoice) {
+  const today = new Date().toISOString().slice(0, 10);
+  await addRecord('transactions', {
+    type:      'income',
+    clientId:  invoice.clientId  ?? null,
+    projectId: invoice.projectId ?? null,
+    category:  'Project Payment',
+    amount:    Number(invoice.amount ?? 0),
+    date:      today,
+    note:      `Invoice ${invoice.number ?? invoice.id}`,
+    createdAt: new Date().toISOString(),
+  });
+}
+
 /* ── Add modal ──────────────────────────────────────────────────────────── */
 function openAddModal(prefill = {}) {
   const autoNum = nextInvoiceNumber();
@@ -468,8 +489,15 @@ async function openEditModal(id) {
         notes:     fd.get('notes').trim(),
       };
 
+      const wasAlreadyPaid = invoice.status === 'paid';
+
       await updateRecord('invoices', id, updates);
-      toast(`Invoice ${updates.number} updated.`, 'success');
+      if (updates.status === 'paid' && !wasAlreadyPaid) {
+        await createPaidTransaction({ ...invoice, ...updates });
+        toast(`Invoice ${updates.number} saved — income transaction added.`, 'success');
+      } else {
+        toast(`Invoice ${updates.number} updated.`, 'success');
+      }
       await loadInvoices();
     },
   });
