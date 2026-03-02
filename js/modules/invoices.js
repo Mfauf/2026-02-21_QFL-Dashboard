@@ -23,6 +23,7 @@ let _projects  = [];
 let _filter    = 'all';
 let _searchQ   = '';
 let _container = null;
+let _dateRange = 'all';    // 'all' | 'last-month' | 'last-year'
 
 /* ── Invoice status config ──────────────────────────────────────────────── */
 const STATUSES = [
@@ -38,6 +39,7 @@ export async function mount(container) {
   _container = container;
   _filter    = 'all';
   _searchQ   = '';
+  _dateRange = 'all';
 
   container.innerHTML = shellHTML();
   bindListeners();
@@ -93,6 +95,17 @@ function applyFilters() {
 
   if (_filter !== 'all') {
     list = list.filter(i => i.status === _filter);
+  }
+
+  if (_dateRange !== 'all') {
+    const now    = new Date();
+    const cutoff = _dateRange === 'last-month'
+      ? new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
+      : new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
+    list = list.filter(inv => {
+      const d = new Date(inv.date ?? inv.createdAt ?? '');
+      return !isNaN(d) && d >= cutoff;
+    });
   }
 
   if (_searchQ.trim()) {
@@ -538,6 +551,16 @@ function bindListeners() {
       renderTable(applyFilters());
     });
   });
+
+  _container.querySelectorAll('[data-daterange]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _dateRange = btn.dataset.daterange;
+      _container.querySelectorAll('[data-daterange]').forEach(b =>
+        b.classList.toggle('filter-active', b.dataset.daterange === _dateRange)
+      );
+      renderTable(applyFilters());
+    });
+  });
 }
 
 /* ── Shell HTML ─────────────────────────────────────────────────────────── */
@@ -624,10 +647,15 @@ function shellHTML() {
       </div>
 
       <!-- Footer -->
-      <div class="px-5 py-3 border-t border-[var(--clr-border)] flex items-center justify-between
+      <div class="px-5 py-3 border-t border-[var(--clr-border)] flex flex-wrap items-center justify-between gap-2
                   bg-[var(--clr-surface-2)]/30">
         <p id="invoices-count" class="text-xs" style="color:var(--clr-text-faint)">— invoices</p>
-        <p class="text-xs" style="color:var(--clr-text-faint)">QFL Dashboard · 2026</p>
+        <div class="flex items-center gap-1">
+          <button class="filter-btn filter-active py-0.5 px-2 text-[11px]" data-daterange="all">All time</button>
+          <button class="filter-btn py-0.5 px-2 text-[11px]" data-daterange="last-month">Last month</button>
+          <button class="filter-btn py-0.5 px-2 text-[11px]" data-daterange="last-year">Last year</button>
+        </div>
+        <p class="text-xs hidden sm:block" style="color:var(--clr-text-faint)">QFL Dashboard · 2026</p>
       </div>
     </div>`;
 }
