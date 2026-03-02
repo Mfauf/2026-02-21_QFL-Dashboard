@@ -51,7 +51,7 @@ export async function mount(container) {
 
   container.innerHTML = `
     <!-- Welcome banner -->
-    <div class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[var(--clr-surface-3)] via-[var(--clr-surface-2)] to-[#1e4172] p-6 md:p-8 mb-8">
+    <div id="overview-banner" class="relative overflow-hidden rounded-2xl bg-gradient-to-r from-[var(--clr-surface-3)] via-[var(--clr-surface-2)] to-[#1e4172] p-6 md:p-8 mb-8">
       <div class="relative z-10">
         <p class="text-blue-300 text-sm font-medium mb-1">Good day 👋</p>
         <h2 class="text-white text-xl md:text-2xl font-semibold">Here's your freelance summary</h2>

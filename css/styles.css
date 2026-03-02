@@ -560,6 +560,15 @@ body {
   background: rgba(248, 250, 252, 0.92) !important;
 }
 
+/* Welcome banner: keep saturated blue so white text stays readable in light mode */
+[data-theme="light"] #overview-banner {
+  background: linear-gradient(to right, #1e3a8a, #1d4ed8, #2563eb) !important;
+}
+/* Restore white text inside the banner (overrides the broad .text-white rule below) */
+[data-theme="light"] #overview-banner .text-white {
+  color: #fff !important;
+}
+
 /* Toast uses a hardcoded dark background — override it */
 [data-theme="light"] .toast {
   background: rgba(255, 255, 255, 0.97) !important;
