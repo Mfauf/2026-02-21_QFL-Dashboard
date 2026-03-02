@@ -27,7 +27,6 @@ let _filter       = 'all';   // 'all' | 'income' | 'outcome'
 let _searchQ      = '';
 let _container    = null;
 let _dateRange    = 'all';   // 'all' | 'last-month' | 'last-year'
-let _sel          = new Set(); // selected transaction IDs for bulk actions
 
 /* ── Categories — read live from settings-store so user edits are reflected ─ */
 const incomeCats  = () => getSettings().categories.income;
@@ -39,7 +38,6 @@ export async function mount(container) {
   _filter    = 'all';
   _searchQ   = '';
   _dateRange = 'all';
-  _sel       = new Set();
 
   container.innerHTML = shellHTML();
   bindListeners();
@@ -208,15 +206,6 @@ function statCard(label, value, color) {
     </div>`;
 }
 
-/* ── Bulk selection bar ──────────────────────────────────────────────────────── */
-function updateBulkBar() {
-  const bar = _container?.querySelector('#finances-bulk-bar');
-  const cnt = _container?.querySelector('#finances-sel-count');
-  if (!bar) return;
-  bar.classList.toggle('active', _sel.size > 0);
-  if (cnt) cnt.textContent = `${_sel.size} selected`;
-}
-
 /* ── Render: transactions table ─────────────────────────────────────────── */
 function renderTable(transactions) {
   const tbody = _container?.querySelector('#finances-tbody');
@@ -251,37 +240,6 @@ function renderTable(transactions) {
   tbody.querySelectorAll('[data-action="delete"]').forEach(btn =>
     btn.addEventListener('click', () => confirmDelete(Number(btn.dataset.id), btn.dataset.label))
   );
-
-  // ── Bulk-select checkboxes ─────────────────────────────────────────────────
-  const allBoxes = tbody.querySelectorAll('[data-row-check]');
-  const master   = _container?.querySelector('#finances-master-check');
-
-  allBoxes.forEach(cb => {
-    cb.checked = _sel.has(Number(cb.dataset.rowCheck));
-    cb.addEventListener('change', () => {
-      cb.checked ? _sel.add(Number(cb.dataset.rowCheck)) : _sel.delete(Number(cb.dataset.rowCheck));
-      updateBulkBar();
-      if (master) {
-        master.indeterminate = _sel.size > 0 && _sel.size < allBoxes.length;
-        master.checked       = allBoxes.length > 0 && _sel.size === allBoxes.length;
-      }
-    });
-  });
-
-  if (master) {
-    master.indeterminate = _sel.size > 0 && _sel.size < allBoxes.length;
-    master.checked       = allBoxes.length > 0 && _sel.size === allBoxes.length;
-    master.onchange = () => {
-      allBoxes.forEach(cb => {
-        cb.checked = master.checked;
-        master.checked ? _sel.add(Number(cb.dataset.rowCheck)) : _sel.delete(Number(cb.dataset.rowCheck));
-      });
-      updateBulkBar();
-      master.indeterminate = false;
-    };
-  }
-
-  updateBulkBar();
 }
 
 /* ── Row HTML ───────────────────────────────────────────────────────────── */
@@ -296,14 +254,8 @@ function rowHTML(tx) {
   const pName = tx.projectId ? projectName(tx.projectId) : null;
 
   return `
-    <tr data-id="${tx.id}"
-        class="border-b border-[var(--clr-border)] last:border-0
+    <tr class="border-b border-[var(--clr-border)] last:border-0
                hover:bg-[var(--clr-surface-2)]/50 transition-colors duration-150">
-
-      <!-- Checkbox -->
-      <td class="td-cell w-8">
-        <input type="checkbox" data-row-check="${tx.id}" class="row-check"/>
-      </td>
 
       <!-- Type badge -->
       <td class="td-cell">
@@ -629,28 +581,6 @@ function bindListeners() {
       renderTable(applyFilters());
     });
   });
-
-  // ── Bulk bar actions ─────────────────────────────────────────────────────
-  _container.querySelector('#finances-bulk-delete')?.addEventListener('click', () => {
-    if (!_sel.size) return;
-    openConfirm({
-      title: 'Delete Selected',
-      message: `Delete ${_sel.size} selected transaction(s)? This cannot be undone.`,
-      confirmLabel: 'Delete',
-      onConfirm: async () => {
-        await Promise.all([..._sel].map(id => deleteRecord('transactions', id)));
-        toast(`${_sel.size} transaction(s) deleted.`, 'info');
-        _sel.clear();
-        await loadTransactions();
-      },
-    });
-  });
-
-  _container.querySelector('#finances-bulk-cancel')?.addEventListener('click', () => {
-    _sel.clear();
-    updateBulkBar();
-    renderTable(applyFilters());
-  });
 }
 
 /* ── Shell HTML ─────────────────────────────────────────────────────────── */
@@ -705,26 +635,11 @@ function shellHTML() {
         </div>
       </div>
 
-      <!-- Bulk action bar -->
-      <div id="finances-bulk-bar" class="bulk-bar flex-wrap px-4 py-3 gap-3
-           border-b border-[var(--clr-border)]"
-           style="background:var(--clr-primary-dim)">
-        <span id="finances-sel-count" class="text-sm font-semibold"
-              style="color:var(--clr-primary-light)">0 selected</span>
-        <div class="flex-1"></div>
-        <button id="finances-bulk-delete" class="btn btn-danger text-xs" style="padding:.375rem .875rem">Delete selected</button>
-        <button id="finances-bulk-cancel" class="btn btn-ghost text-xs" style="padding:.375rem .875rem">Cancel</button>
-      </div>
-
       <!-- Table -->
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-[var(--clr-border)] bg-[var(--clr-surface-2)]/50">
-              <th class="th-cell w-8">
-                <input type="checkbox" id="finances-master-check" class="row-check"
-                       aria-label="Select all transactions"/>
-              </th>
               <th class="th-cell text-left">Type</th>
               <th class="th-cell text-left">Category / Note</th>
               <th class="th-cell text-left hidden md:table-cell">Client / Project</th>
@@ -736,7 +651,7 @@ function shellHTML() {
           <tbody id="finances-tbody">
             <!-- Loading spinner -->
             <tr>
-              <td colspan="7">
+              <td colspan="6">
                 <div class="empty-state">
                   <svg class="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"
                        style="color:var(--clr-surface-3)">
