@@ -21,11 +21,10 @@
     "url": "https://github.com/Mfauf/2026-02-21_Gemini_QatarFreeLance-Dashboard/issues"
   },
   "homepage": "https://github.com/Mfauf/2026-02-21_Gemini_QatarFreeLance-Dashboard#readme",
-  "devDependencies": {
-    "@tailwindcss/cli": "^4.2.1",
-    "tailwindcss": "^4.2.1"
-  },
   "dependencies": {
     "chart.js": "^4.5.1"
+  },
+  "devDependencies": {
+    "tailwindcss": "^3.4.19"
   }
 }
