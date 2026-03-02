@@ -25,6 +25,7 @@ let _filter    = 'all';
 let _searchQ   = '';
 let _container = null;
 let _dateRange = 'all';    // 'all' | 'last-month' | 'last-year'
+let _sel      = new Set(); // selected project IDs for bulk actions
 
 /* ── Project status config ──────────────────────────────────────────────── */
 const STATUSES = [
@@ -40,6 +41,7 @@ export async function mount(container) {
   _filter    = 'all';
   _searchQ   = '';
   _dateRange = 'all';
+  _sel       = new Set();
 
   container.innerHTML = shellHTML();
   bindListeners();
@@ -99,6 +101,11 @@ function applyFilters() {
     });
   }
 
+  // When no filters are active, sort by manual drag-drop priority order
+  if (_filter === 'all' && !_searchQ.trim() && _dateRange === 'all') {
+    list = [...list].sort((a, b) => (a.sortOrder ?? Infinity) - (b.sortOrder ?? Infinity));
+  }
+
   return list;
 }
 
@@ -134,6 +141,60 @@ function miniStat(label, value, color) {
     </div>`;
 }
 
+/* ── Bulk selection bar ─────────────────────────────────────────────────── */
+function updateBulkBar() {
+  const bar = _container?.querySelector('#projects-bulk-bar');
+  const cnt = _container?.querySelector('#projects-sel-count');
+  if (!bar) return;
+  bar.classList.toggle('active', _sel.size > 0);
+  if (cnt) cnt.textContent = `${_sel.size} selected`;
+}
+
+/* ── Drag-to-reorder ────────────────────────────────────────────────────── */
+function setupDragDrop(tbody) {
+  let dragSrcRow = null;
+
+  tbody.querySelectorAll('tr[data-id]').forEach(row => {
+    row.addEventListener('dragstart', e => {
+      dragSrcRow = row;
+      row.classList.add('drag-source');
+      e.dataTransfer.effectAllowed = 'move';
+    });
+    row.addEventListener('dragover', e => {
+      if (!dragSrcRow || dragSrcRow === row) return;
+      e.preventDefault();
+      tbody.querySelectorAll('tr.drag-over').forEach(r => r.classList.remove('drag-over'));
+      row.classList.add('drag-over');
+    });
+    row.addEventListener('dragleave', () => row.classList.remove('drag-over'));
+    row.addEventListener('dragend', () => {
+      tbody.querySelectorAll('tr').forEach(r => r.classList.remove('drag-source', 'drag-over'));
+      dragSrcRow = null;
+    });
+    row.addEventListener('drop', async e => {
+      e.preventDefault();
+      if (!dragSrcRow || dragSrcRow === row) return;
+      const rows   = [...tbody.querySelectorAll('tr[data-id]')];
+      const srcIdx = rows.indexOf(dragSrcRow);
+      const dstIdx = rows.indexOf(row);
+      rows.splice(srcIdx, 1);
+      rows.splice(dstIdx, 0, dragSrcRow);
+      rows.forEach(r => tbody.appendChild(r));
+      row.classList.remove('drag-over');
+      try {
+        await Promise.all(
+          rows.map((r, i) => updateRecord('projects', Number(r.dataset.id), { sortOrder: i }))
+        );
+        rows.forEach((r, i) => {
+          const p = _projects.find(pr => pr.id === Number(r.dataset.id));
+          if (p) p.sortOrder = i;
+        });
+        toast('Priority order saved.', 'success');
+      } catch { toast('Failed to save order.', 'error'); }
+    });
+  });
+}
+
 /* ── Render: projects table ─────────────────────────────────────────────── */
 function renderTable(projects) {
   const tbody = _container?.querySelector('#projects-tbody');
@@ -144,7 +205,7 @@ function renderTable(projects) {
 
   if (!projects.length) {
     tbody.innerHTML = `
-      <tr><td colspan="8">
+      <tr><td colspan="10">
         <div class="empty-state">
           <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -202,6 +263,38 @@ function renderTable(projects) {
       }
     });
   });
+
+  // ── Bulk-select checkboxes ──────────────────────────────────────────────
+  const allBoxes = tbody.querySelectorAll('[data-row-check]');
+  const master   = _container?.querySelector('#projects-master-check');
+
+  allBoxes.forEach(cb => {
+    cb.checked = _sel.has(Number(cb.dataset.rowCheck));
+    cb.addEventListener('change', () => {
+      cb.checked ? _sel.add(Number(cb.dataset.rowCheck)) : _sel.delete(Number(cb.dataset.rowCheck));
+      updateBulkBar();
+      if (master) {
+        master.indeterminate = _sel.size > 0 && _sel.size < allBoxes.length;
+        master.checked       = allBoxes.length > 0 && _sel.size === allBoxes.length;
+      }
+    });
+  });
+
+  if (master) {
+    master.indeterminate = _sel.size > 0 && _sel.size < allBoxes.length;
+    master.checked       = allBoxes.length > 0 && _sel.size === allBoxes.length;
+    master.onchange = () => {
+      allBoxes.forEach(cb => {
+        cb.checked = master.checked;
+        master.checked ? _sel.add(Number(cb.dataset.rowCheck)) : _sel.delete(Number(cb.dataset.rowCheck));
+      });
+      updateBulkBar();
+      master.indeterminate = false;
+    };
+  }
+
+  updateBulkBar();
+  setupDragDrop(tbody);
 }
 
 /* ── Row HTML ───────────────────────────────────────────────────────────── */
@@ -213,7 +306,17 @@ function rowHTML(p) {
                   && new Date(p.endDate) < new Date();
 
   return `
-    <tr class="border-b border-[var(--clr-border)] last:border-0 hover:bg-[var(--clr-surface-2)]/50 transition-colors duration-150">
+    <tr data-id="${p.id}" draggable="true"
+        class="border-b border-[var(--clr-border)] last:border-0 hover:bg-[var(--clr-surface-2)]/50 transition-colors duration-150">
+
+      <!-- Checkbox (bulk select) -->
+      <td class="td-cell w-8">
+        <input type="checkbox" data-row-check="${p.id}" class="row-check"/>
+      </td>
+
+      <!-- Drag handle -->
+      <td class="td-cell w-8 text-center cursor-grab hidden sm:table-cell select-none"
+          style="color:var(--clr-text-faint);font-size:1.15rem" title="Drag to reorder priority">⠿</td>
 
       <!-- Project name -->
       <td class="td-cell">
@@ -486,6 +589,38 @@ function bindListeners() {
       renderTable(applyFilters());
     });
   });
+
+  // ── Bulk bar actions ───────────────────────────────────────────────────
+  _container.querySelector('#projects-bulk-status')?.addEventListener('change', async (e) => {
+    const newStatus = e.target.value;
+    if (!newStatus || !_sel.size) { e.target.value = ''; return; }
+    await Promise.all([..._sel].map(id => updateRecord('projects', id, { status: newStatus })));
+    toast(`${_sel.size} project(s) updated to ${newStatus}.`, 'success');
+    _sel.clear();
+    await loadProjects();
+    e.target.value = '';
+  });
+
+  _container.querySelector('#projects-bulk-delete')?.addEventListener('click', () => {
+    if (!_sel.size) return;
+    openConfirm({
+      title: 'Delete Selected',
+      message: `Delete ${_sel.size} selected project(s)? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        await Promise.all([..._sel].map(id => deleteRecord('projects', id)));
+        toast(`${_sel.size} project(s) deleted.`, 'info');
+        _sel.clear();
+        await loadProjects();
+      },
+    });
+  });
+
+  _container.querySelector('#projects-bulk-cancel')?.addEventListener('click', () => {
+    _sel.clear();
+    updateBulkBar();
+    renderTable(applyFilters());
+  });
 }
 
 /* ── Shell HTML ─────────────────────────────────────────────────────────── */
@@ -540,11 +675,34 @@ function shellHTML() {
         </div>
       </div>
 
+      <!-- Bulk action bar -->
+      <div id="projects-bulk-bar" class="bulk-bar flex-wrap px-4 py-3 gap-3
+           border-b border-[var(--clr-border)]"
+           style="background:var(--clr-primary-dim)">
+        <span id="projects-sel-count" class="text-sm font-semibold"
+              style="color:var(--clr-primary-light)">0 selected</span>
+        <div class="flex-1"></div>
+        <select id="projects-bulk-status" class="form-select text-xs" style="width:auto;padding:.3rem .75rem">
+          <option value="">— Change status —</option>
+          <option value="in-progress">In Progress</option>
+          <option value="complete">Complete</option>
+          <option value="on-hold">On Hold</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <button id="projects-bulk-delete" class="btn btn-danger text-xs" style="padding:.375rem .875rem">Delete selected</button>
+        <button id="projects-bulk-cancel" class="btn btn-ghost text-xs" style="padding:.375rem .875rem">Cancel</button>
+      </div>
+
       <!-- Table -->
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-[var(--clr-border)] bg-[var(--clr-surface-2)]/50">
+              <th class="th-cell w-8">
+                <input type="checkbox" id="projects-master-check" class="row-check"
+                       aria-label="Select all projects"/>
+              </th>
+              <th class="th-cell w-8 hidden sm:table-cell"></th>
               <th class="th-cell text-left">Project</th>
               <th class="th-cell text-left hidden md:table-cell">Client</th>
               <th class="th-cell text-right hidden sm:table-cell">Amount</th>
@@ -557,7 +715,7 @@ function shellHTML() {
           </thead>
           <tbody id="projects-tbody">
             <tr>
-              <td colspan="8">
+              <td colspan="10">
                 <div class="empty-state">
                   <svg class="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"
                        style="color:var(--clr-surface-3)">

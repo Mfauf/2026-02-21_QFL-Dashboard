@@ -25,6 +25,7 @@ let _filter    = 'all';
 let _searchQ   = '';
 let _container = null;
 let _dateRange = 'all';    // 'all' | 'last-month' | 'last-year'
+let _sel      = new Set(); // selected invoice IDs for bulk actions
 
 /* ── Invoice status config ──────────────────────────────────────────────── */
 const STATUSES = [
@@ -41,6 +42,7 @@ export async function mount(container) {
   _filter    = 'all';
   _searchQ   = '';
   _dateRange = 'all';
+  _sel       = new Set();
 
   container.innerHTML = shellHTML();
   bindListeners();
@@ -181,6 +183,15 @@ function miniStat(label, value, color) {
     </div>`;
 }
 
+/* ── Bulk selection bar ──────────────────────────────────────────────────────── */
+function updateBulkBar() {
+  const bar = _container?.querySelector('#invoices-bulk-bar');
+  const cnt = _container?.querySelector('#invoices-sel-count');
+  if (!bar) return;
+  bar.classList.toggle('active', _sel.size > 0);
+  if (cnt) cnt.textContent = `${_sel.size} selected`;
+}
+
 /* ── Render: invoices table ─────────────────────────────────────────────── */
 function renderTable(invoices) {
   const tbody = _container?.querySelector('#invoices-tbody');
@@ -250,9 +261,38 @@ function renderTable(invoices) {
       }
     });
   });
-}
 
-/* ── Row HTML ───────────────────────────────────────────────────────────── */
+  // ── Bulk-select checkboxes ─────────────────────────────────────────────────
+  const allBoxes = tbody.querySelectorAll('[data-row-check]');
+  const master   = _container?.querySelector('#invoices-master-check');
+
+  allBoxes.forEach(cb => {
+    cb.checked = _sel.has(Number(cb.dataset.rowCheck));
+    cb.addEventListener('change', () => {
+      cb.checked ? _sel.add(Number(cb.dataset.rowCheck)) : _sel.delete(Number(cb.dataset.rowCheck));
+      updateBulkBar();
+      if (master) {
+        master.indeterminate = _sel.size > 0 && _sel.size < allBoxes.length;
+        master.checked       = allBoxes.length > 0 && _sel.size === allBoxes.length;
+      }
+    });
+  });
+
+  if (master) {
+    master.indeterminate = _sel.size > 0 && _sel.size < allBoxes.length;
+    master.checked       = allBoxes.length > 0 && _sel.size === allBoxes.length;
+    master.onchange = () => {
+      allBoxes.forEach(cb => {
+        cb.checked = master.checked;
+        master.checked ? _sel.add(Number(cb.dataset.rowCheck)) : _sel.delete(Number(cb.dataset.rowCheck));
+      });
+      updateBulkBar();
+      master.indeterminate = false;
+    };
+  }
+
+  updateBulkBar();
+}──────────────────────────────────────────────────────────── */
 function rowHTML(inv) {
   const status   = STATUSES.find(s => s.value === inv.status) ?? STATUSES[0];
   const issuedAt = formatDate(inv.issuedAt);
@@ -261,8 +301,14 @@ function rowHTML(inv) {
                     && new Date(inv.dueAt) < new Date();
 
   return `
-    <tr class="border-b border-[var(--clr-border)] last:border-0
+    <tr data-id="${inv.id}"
+        class="border-b border-[var(--clr-border)] last:border-0
                hover:bg-[var(--clr-surface-2)]/50 transition-colors duration-150">
+
+      <!-- Checkbox -->
+      <td class="td-cell w-8">
+        <input type="checkbox" data-row-check="${inv.id}" class="row-check"/>
+      </td>
 
       <!-- Invoice number -->
       <td class="td-cell">
@@ -580,6 +626,38 @@ function bindListeners() {
       renderTable(applyFilters());
     });
   });
+
+  // ── Bulk bar actions ─────────────────────────────────────────────────────
+  _container.querySelector('#invoices-bulk-status')?.addEventListener('change', async (e) => {
+    const newStatus = e.target.value;
+    if (!newStatus || !_sel.size) { e.target.value = ''; return; }
+    await Promise.all([..._sel].map(id => updateRecord('invoices', id, { status: newStatus })));
+    toast(`${_sel.size} invoice(s) updated to ${newStatus}.`, 'success');
+    _sel.clear();
+    await loadInvoices();
+    e.target.value = '';
+  });
+
+  _container.querySelector('#invoices-bulk-delete')?.addEventListener('click', () => {
+    if (!_sel.size) return;
+    openConfirm({
+      title: 'Delete Selected',
+      message: `Delete ${_sel.size} selected invoice(s)? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        await Promise.all([..._sel].map(id => deleteRecord('invoices', id)));
+        toast(`${_sel.size} invoice(s) deleted.`, 'info');
+        _sel.clear();
+        await loadInvoices();
+      },
+    });
+  });
+
+  _container.querySelector('#invoices-bulk-cancel')?.addEventListener('click', () => {
+    _sel.clear();
+    updateBulkBar();
+    renderTable(applyFilters());
+  });
 }
 
 /* ── Shell HTML ─────────────────────────────────────────────────────────── */
@@ -635,11 +713,34 @@ function shellHTML() {
         </div>
       </div>
 
+      <!-- Bulk action bar -->
+      <div id="invoices-bulk-bar" class="bulk-bar flex-wrap px-4 py-3 gap-3
+           border-b border-[var(--clr-border)]"
+           style="background:var(--clr-primary-dim)">
+        <span id="invoices-sel-count" class="text-sm font-semibold"
+              style="color:var(--clr-primary-light)">0 selected</span>
+        <div class="flex-1"></div>
+        <select id="invoices-bulk-status" class="form-select text-xs" style="width:auto;padding:.3rem .75rem">
+          <option value="">— Change status —</option>
+          <option value="draft">Draft</option>
+          <option value="sent">Sent</option>
+          <option value="paid">Paid</option>
+          <option value="overdue">Overdue</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+        <button id="invoices-bulk-delete" class="btn btn-danger text-xs" style="padding:.375rem .875rem">Delete selected</button>
+        <button id="invoices-bulk-cancel" class="btn btn-ghost text-xs" style="padding:.375rem .875rem">Cancel</button>
+      </div>
+
       <!-- Table -->
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-[var(--clr-border)] bg-[var(--clr-surface-2)]/50">
+              <th class="th-cell w-8">
+                <input type="checkbox" id="invoices-master-check" class="row-check"
+                       aria-label="Select all invoices"/>
+              </th>
               <th class="th-cell text-left">Number</th>
               <th class="th-cell text-left">Client / Project</th>
               <th class="th-cell text-right hidden sm:table-cell">Amount</th>
@@ -651,7 +752,7 @@ function shellHTML() {
           </thead>
           <tbody id="invoices-tbody">
             <tr>
-              <td colspan="7">
+              <td colspan="8">
                 <div class="empty-state">
                   <svg class="w-8 h-8 animate-spin" fill="none" viewBox="0 0 24 24"
                        style="color:var(--clr-surface-3)">

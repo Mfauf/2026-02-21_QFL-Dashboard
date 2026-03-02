@@ -19,6 +19,7 @@ let _filter      = 'all';  // 'all' | 'active' | 'inactive'
 let _searchQuery = '';
 let _container   = null;   // root DOM element set by mount()
 let _dateRange   = 'all';  // 'all' | 'last-month' | 'last-year'
+let _sel         = new Set(); // selected client IDs for bulk actions
 
 /* ── Mount / unmount ────────────────────────────────────────────────────── */
 export async function mount(container) {
@@ -26,6 +27,7 @@ export async function mount(container) {
   _filter      = 'all';
   _searchQuery = '';
   _dateRange   = 'all';
+  _sel         = new Set();
 
   container.innerHTML = shellHTML();
   bindListeners();
@@ -105,6 +107,15 @@ function miniStat(label, value, color) {
     </div>`;
 }
 
+/* ── Bulk selection bar ──────────────────────────────────────────────────────── */
+function updateBulkBar() {
+  const bar = _container?.querySelector('#clients-bulk-bar');
+  const cnt = _container?.querySelector('#clients-sel-count');
+  if (!bar) return;
+  bar.classList.toggle('active', _sel.size > 0);
+  if (cnt) cnt.textContent = `${_sel.size} selected`;
+}
+
 /* ── Render: clients table ──────────────────────────────────────────────── */
 function renderTable(clients) {
   const tbody = _container?.querySelector('#clients-tbody');
@@ -118,7 +129,7 @@ function renderTable(clients) {
   if (!clients.length) {
     tbody.innerHTML = `
       <tr>
-        <td colspan="7">
+        <td colspan="8">
           <div class="empty-state">
             <svg class="w-12 h-12" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
@@ -164,9 +175,38 @@ function renderTable(clients) {
       }
     });
   });
-}
 
-/* ── Row HTML ───────────────────────────────────────────────────────────── */
+  // ── Bulk-select checkboxes ─────────────────────────────────────────────────
+  const allBoxes = tbody.querySelectorAll('[data-row-check]');
+  const master   = _container?.querySelector('#clients-master-check');
+
+  allBoxes.forEach(cb => {
+    cb.checked = _sel.has(Number(cb.dataset.rowCheck));
+    cb.addEventListener('change', () => {
+      cb.checked ? _sel.add(Number(cb.dataset.rowCheck)) : _sel.delete(Number(cb.dataset.rowCheck));
+      updateBulkBar();
+      if (master) {
+        master.indeterminate = _sel.size > 0 && _sel.size < allBoxes.length;
+        master.checked       = allBoxes.length > 0 && _sel.size === allBoxes.length;
+      }
+    });
+  });
+
+  if (master) {
+    master.indeterminate = _sel.size > 0 && _sel.size < allBoxes.length;
+    master.checked       = allBoxes.length > 0 && _sel.size === allBoxes.length;
+    master.onchange = () => {
+      allBoxes.forEach(cb => {
+        cb.checked = master.checked;
+        master.checked ? _sel.add(Number(cb.dataset.rowCheck)) : _sel.delete(Number(cb.dataset.rowCheck));
+      });
+      updateBulkBar();
+      master.indeterminate = false;
+    };
+  }
+
+  updateBulkBar();
+} ───────────────────────────────────────────────────────────── */
 function rowHTML(c) {
   const bg  = avatarColor(c.name);
   const ini = initials(c.name);
@@ -174,7 +214,13 @@ function rowHTML(c) {
   const statusLabel = c.status === 'active' ? 'Active' : 'Inactive';
 
   return `
-    <tr class="border-b border-[var(--clr-border)] last:border-0 hover:bg-[var(--clr-surface-2)]/50 transition-colors duration-150">
+    <tr data-id="${c.id}"
+        class="border-b border-[var(--clr-border)] last:border-0 hover:bg-[var(--clr-surface-2)]/50 transition-colors duration-150">
+
+      <!-- Checkbox -->
+      <td class="td-cell w-8">
+        <input type="checkbox" data-row-check="${c.id}" class="row-check"/>
+      </td>
 
       <!-- Name + Avatar -->
       <td class="td-cell">
@@ -415,9 +461,39 @@ function bindListeners() {
       renderTable(applyFilters());
     });
   });
-}
 
-/* ── Shell HTML ─────────────────────────────────────────────────────────── */
+  // ── Bulk bar actions ─────────────────────────────────────────────────────
+  _container.querySelector('#clients-bulk-status')?.addEventListener('change', async (e) => {
+    const newStatus = e.target.value;
+    if (!newStatus || !_sel.size) { e.target.value = ''; return; }
+    await Promise.all([..._sel].map(id => updateRecord('clients', id, { status: newStatus })));
+    toast(`${_sel.size} client(s) updated to ${newStatus}.`, 'success');
+    _sel.clear();
+    await loadClients();
+    e.target.value = '';
+  });
+
+  _container.querySelector('#clients-bulk-delete')?.addEventListener('click', () => {
+    if (!_sel.size) return;
+    openConfirm({
+      title: 'Delete Selected',
+      message: `Delete ${_sel.size} selected client(s)? This cannot be undone.`,
+      confirmLabel: 'Delete',
+      onConfirm: async () => {
+        await Promise.all([..._sel].map(id => deleteRecord('clients', id)));
+        toast(`${_sel.size} client(s) deleted.`, 'info');
+        _sel.clear();
+        await loadClients();
+      },
+    });
+  });
+
+  _container.querySelector('#clients-bulk-cancel')?.addEventListener('click', () => {
+    _sel.clear();
+    updateBulkBar();
+    renderTable(applyFilters());
+  });
+} ─────────────────────────────────────────────────────────── */
 function shellHTML() {
   return `
     <!-- Page header -->
@@ -467,11 +543,31 @@ function shellHTML() {
         </div>
       </div>
 
+      <!-- Bulk action bar -->
+      <div id="clients-bulk-bar" class="bulk-bar flex-wrap px-4 py-3 gap-3
+           border-b border-[var(--clr-border)]"
+           style="background:var(--clr-primary-dim)">
+        <span id="clients-sel-count" class="text-sm font-semibold"
+              style="color:var(--clr-primary-light)">0 selected</span>
+        <div class="flex-1"></div>
+        <select id="clients-bulk-status" class="form-select text-xs" style="width:auto;padding:.3rem .75rem">
+          <option value="">— Change status —</option>
+          <option value="active">Active</option>
+          <option value="inactive">Inactive</option>
+        </select>
+        <button id="clients-bulk-delete" class="btn btn-danger text-xs" style="padding:.375rem .875rem">Delete selected</button>
+        <button id="clients-bulk-cancel" class="btn btn-ghost text-xs" style="padding:.375rem .875rem">Cancel</button>
+      </div>
+
       <!-- Table -->
       <div class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="border-b border-[var(--clr-border)] bg-[var(--clr-surface-2)]/50">
+              <th class="th-cell w-8">
+                <input type="checkbox" id="clients-master-check" class="row-check"
+                       aria-label="Select all clients"/>
+              </th>
               <th class="th-cell text-left">Client</th>
               <th class="th-cell text-left hidden md:table-cell">Email</th>
               <th class="th-cell text-left hidden lg:table-cell">Phone</th>
@@ -483,7 +579,7 @@ function shellHTML() {
           </thead>
           <tbody id="clients-tbody">
             <tr>
-              <td colspan="7">
+              <td colspan="8">
                 <div class="empty-state">
                   <svg class="w-8 h-8 animate-spin text-[var(--clr-surface-3)]" fill="none" viewBox="0 0 24 24">
                     <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"/>
