@@ -142,6 +142,7 @@ export function openConfirm({ title = 'Are you sure?', message, confirmLabel = '
 
   confirmBtn.onclick = handleConfirm;
   cancelBtn.onclick  = close;
+  backdrop.onclick   = close;
   backdrop.querySelector('.confirm-box').onclick = (e) => e.stopPropagation();
 
   requestAnimationFrame(() => {
