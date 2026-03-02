@@ -514,3 +514,8 @@ body {
   background: var(--clr-danger-bg);
   color: var(--clr-danger);
 }
+
+/* ── Ensure Tailwind's .hidden beats any display:flex/block on the same element.
+   Required because styles.css loads after tailwind.css, so same-specificity    
+   rules here would otherwise override Tailwind utilities. ──────────────────── */
+.hidden { display: none !important; }
