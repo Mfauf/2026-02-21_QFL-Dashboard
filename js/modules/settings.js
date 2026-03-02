@@ -17,6 +17,7 @@ import { getAllRecords, clearStore, bulkAddRecords } from '../db.js';
 import { toast, openConfirm }          from '../ui.js';
 import { escapeHtml }                  from '../utils.js';
 import { applyTheme }                  from '../theme.js';
+import { getOrCreateUID, openPeer, connectAndSync } from '../sync.js';
 
 /* ── Module state ───────────────────────────────────────────────────────── */
 let _container = null;
@@ -27,10 +28,18 @@ export function mount(container) {
   container.innerHTML = shellHTML();
   populate();
   bindAll();
+
+  // Initialise PeerJS peer so this device is reachable while Settings is open
+  getOrCreateUID().then(uid => {
+    const el = _container?.querySelector('#sync-my-uid');
+    if (el) el.value = uid;
+    openPeer(uid, updateSyncStatus);
+  }).catch(err => updateSyncStatus(err.message, 'error'));
 }
 
 export function unmount() {
   _container = null;
+  // Peer stays alive so incoming syncs work after navigating away
 }
 
 /* ── Populate all fields from stored settings ───────────────────────────── */
@@ -53,6 +62,9 @@ function populate() {
 
   // Appearance
   updateThemeBtns(s.appearance?.theme ?? 'system');
+
+  // Sync: populate saved peer UID
+  _v('sync-peer-uid', s.sync?.peerUID ?? '');
 
   // Category chip lists
   renderChips('cats-project', s.categories.project);
@@ -89,6 +101,24 @@ function updateThemeBtns(active) {
     btn.classList.toggle('filter-active', on);
     btn.setAttribute('aria-pressed', String(on));
   });
+}
+
+/* ── Sync status indicator ───────────────────────────────────────── */
+function updateSyncStatus(msg, type) {
+  const dot    = _container?.querySelector('#sync-status-dot');
+  const text   = _container?.querySelector('#sync-status-text');
+  const synBtn = _container?.querySelector('#btn-sync-now');
+  if (!dot || !text) return;
+
+  const dotColor = {
+    ready:   'var(--clr-success)',
+    syncing: 'var(--clr-primary)',
+    success: 'var(--clr-success)',
+    error:   'var(--clr-danger)',
+  };
+  dot.style.background = dotColor[type] ?? 'var(--clr-text-faint)';
+  text.textContent     = msg;
+  if (synBtn) synBtn.disabled = (type === 'syncing');
 }
 
 /* ── Chips renderer ─────────────────────────────────────────────────────── */
@@ -345,6 +375,35 @@ function bindAll() {
     });
   });
 
+  // ── Sync: copy UID
+  _container.querySelector('#btn-sync-copy-uid')?.addEventListener('click', () => {
+    const uid = _container.querySelector('#sync-my-uid')?.value;
+    if (!uid || uid === 'Loading…') return;
+    navigator.clipboard.writeText(uid)
+      .then(() => toast('Device ID copied to clipboard.', 'success'))
+      .catch(() => {
+        // Fallback: select text
+        _container.querySelector('#sync-my-uid')?.select();
+        toast('Copy failed — the ID is selected, press Ctrl+C.', 'info');
+      });
+  });
+
+  // ── Sync: sync now
+  _container.querySelector('#btn-sync-now')?.addEventListener('click', async () => {
+    const peerUID = _container.querySelector('#sync-peer-uid')?.value?.trim();
+    if (!peerUID) { toast('Paste the other device’s ID first.', 'error'); return; }
+    // Save chosen peer UID
+    saveSettings({ sync: { peerUID } });
+    try {
+      await connectAndSync(peerUID, updateSyncStatus);
+      updateSyncStatus('Sync complete — all data merged!', 'success');
+      toast('Sync complete!', 'success');
+    } catch (err) {
+      updateSyncStatus(err.message, 'error');
+      toast(err.message, 'error');
+    }
+  });
+
   // ── Export
   _container.querySelector('#btn-export')?.addEventListener('click', exportData);
 
@@ -552,7 +611,87 @@ function shellHTML() {
       </div>
 
       <!-- ═══════════════════════════════════════════════════════════
-           SECTION 7 — Data
+           SECTION 7 — Local Sync
+      ════════════════════════════════════════════════════════════ -->
+      <div class="card p-6">
+        <h3 class="text-base font-semibold text-[var(--clr-text)] mb-1">Local Sync</h3>
+        <p class="text-sm text-[var(--clr-text-faint)] mb-5">
+          Sync your data between devices using a direct peer-to-peer connection.
+          Both devices must be online and have the app open.
+        </p>
+
+        <!-- Status bar -->
+        <div class="flex items-center gap-2.5 px-4 py-3 rounded-xl mb-5"
+             style="background:var(--clr-surface-2)">
+          <span id="sync-status-dot"
+                class="w-2.5 h-2.5 rounded-full shrink-0 transition-colors"
+                style="background:var(--clr-text-faint)"></span>
+          <span id="sync-status-text" class="text-sm" style="color:var(--clr-text-muted)">Initialising…</span>
+        </div>
+
+        <!-- This device ID -->
+        <div class="mb-4">
+          <label class="form-label">Your Device ID</label>
+          <div class="flex gap-2">
+            <input id="sync-my-uid" type="text" class="form-input font-mono text-xs flex-1"
+                   readonly value="Loading…" onclick="this.select()"
+                   style="cursor:text; user-select:all" />
+            <button id="btn-sync-copy-uid" type="button" class="btn btn-ghost shrink-0 flex items-center gap-1.5">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                  d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8
+                     a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"/>
+              </svg>
+              Copy
+            </button>
+          </div>
+          <p class="text-xs mt-1.5" style="color:var(--clr-text-faint)">
+            Share this ID with the other device so it can connect to you.
+          </p>
+        </div>
+
+        <!-- Peer device ID -->
+        <div class="mb-5">
+          <label class="form-label">Other Device ID</label>
+          <input id="sync-peer-uid" type="text" class="form-input font-mono text-xs"
+                 placeholder="Paste the other device’s ID here" autocomplete="off" />
+          <p class="text-xs mt-1.5" style="color:var(--clr-text-faint)">
+            Paste the <strong style="color:var(--clr-text-muted)">Your Device ID</strong>
+            shown on the other device, then press Sync.
+          </p>
+        </div>
+
+        <!-- How it works note -->
+        <div class="rounded-xl p-4 mb-5 flex gap-3"
+             style="background:var(--clr-primary-dim); border:1px solid var(--clr-primary-ring)">
+          <svg class="w-4 h-4 shrink-0 mt-0.5" fill="none" stroke="currentColor"
+               viewBox="0 0 24 24" style="color:var(--clr-primary-light)">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>
+          </svg>
+          <p class="text-xs leading-relaxed" style="color:var(--clr-text-muted)">
+            <strong style="color:var(--clr-text)">How it works:</strong>
+            Open this Settings page on <em>both</em> devices.
+            Copy your ID from one device and paste it on the other, then press
+            <strong style="color:var(--clr-text)">Sync Now</strong>.
+            Records are merged — newer data always wins. Nothing is deleted.
+          </p>
+        </div>
+
+        <div class="flex justify-end">
+          <button id="btn-sync-now" type="button" class="btn btn-primary flex items-center gap-2">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5
+                   h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+            </svg>
+            Sync Now
+          </button>
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════
+           SECTION 8 — Data
       ════════════════════════════════════════════════════════════ -->
       <div class="card p-6">
         <h3 class="text-base font-semibold text-[var(--clr-text)] mb-1">Data</h3>
