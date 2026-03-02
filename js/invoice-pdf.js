@@ -49,7 +49,6 @@ export function printInvoice(invoice, client, project) {
   const projectName = project?.name ?? null;
   const s       = getSettings();
   const profile = s.profile;
-  const invSet  = s.invoice;
 
   const statusLabel = STATUS_LABEL[invoice.status] ?? invoice.status;
   const statusColor = STATUS_COLOR[invoice.status] ?? '#94a3b8';
@@ -76,13 +75,6 @@ export function printInvoice(invoice, client, project) {
     ? `<div style="margin-top:2rem;padding:1.25rem 1.5rem;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;">
          <p style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin:0 0 .5rem;">Notes</p>
          <p style="font-size:.875rem;color:#475569;line-height:1.6;margin:0;white-space:pre-wrap;">${esc(invoice.notes)}</p>
-       </div>`
-    : '';
-
-  const termsBlock = invSet.paymentTerms
-    ? `<div style="margin-top:1rem;padding:1.25rem 1.5rem;background:#f8fafc;border-radius:10px;border:1px solid #e2e8f0;">
-         <p style="font-size:.75rem;font-weight:600;text-transform:uppercase;letter-spacing:.08em;color:#94a3b8;margin:0 0 .5rem;">Payment Terms</p>
-         <p style="font-size:.875rem;color:#475569;line-height:1.6;margin:0;">${esc(invSet.paymentTerms)}</p>
        </div>`
     : '';
 
@@ -182,6 +174,8 @@ export function printInvoice(invoice, client, project) {
           </p>
           ${profile.company ? `<p style="font-size:.875rem;color:#64748b;margin-top:.2rem;">${esc(profile.company)}</p>` : ''}
           ${profile.tagline ? `<p style="font-size:.75rem;color:#94a3b8;margin-top:.15rem;font-style:italic;">${esc(profile.tagline)}</p>` : ''}
+          ${profile.email  ? `<p style="font-size:.8rem;color:#64748b;margin-top:.3rem;">${esc(profile.email)}</p>`  : ''}
+          ${profile.phone  ? `<p style="font-size:.8rem;color:#64748b;margin-top:.1rem;">${esc(profile.phone)}</p>`  : ''}
         </div>
       </div>
 
@@ -287,7 +281,6 @@ export function printInvoice(invoice, client, project) {
 
     <!-- ── Notes + Terms ────────────────────────────────────────────────── -->
     ${notesBlock}
-    ${termsBlock}
 
     <!-- ── Footer ─────────────────────────────────────────────────────── -->
     <div style="margin-top:3rem;padding-top:1.5rem;border-top:1px solid #e2e8f0;
