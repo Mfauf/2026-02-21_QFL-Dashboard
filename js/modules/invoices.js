@@ -14,6 +14,7 @@
 import { addRecord, getAllRecords, updateRecord, deleteRecord } from '../db.js';
 import { toast, openModal, openConfirm }                       from '../ui.js';
 import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce } from '../utils.js';
+import { printInvoice }                                        from '../invoice-pdf.js';
 
 /* ── Module state ───────────────────────────────────────────────────────── */
 let _invoices  = [];
@@ -167,6 +168,14 @@ function renderTable(invoices) {
 
   tbody.innerHTML = invoices.map(inv => rowHTML(inv)).join('');
 
+  tbody.querySelectorAll('[data-action="pdf"]').forEach(btn =>
+    btn.addEventListener('click', () => {
+      const inv = _invoices.find(i => i.id === Number(btn.dataset.id));
+      if (!inv) return;
+      const ok = printInvoice(inv, clientName(inv.clientId), projectName(inv.projectId));
+      if (!ok) toast('Popup blocked — please allow popups for this site.', 'warning');
+    })
+  );
   tbody.querySelectorAll('[data-action="edit"]').forEach(btn =>
     btn.addEventListener('click', () => openEditModal(Number(btn.dataset.id)))
   );
@@ -252,6 +261,15 @@ function rowHTML(inv) {
       <!-- Actions -->
       <td class="td-cell text-right">
         <div class="flex items-center justify-end gap-1">
+          <button data-action="pdf" data-id="${inv.id}"
+                  class="btn btn-icon" title="Export PDF"
+                  aria-label="Export PDF for invoice ${escapeHtml(inv.number ?? '')}">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586
+                   a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+          </button>
           <button data-action="edit" data-id="${inv.id}"
                   class="btn btn-icon" title="Edit invoice"
                   aria-label="Edit invoice ${escapeHtml(inv.number ?? '')}">
