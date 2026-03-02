@@ -267,6 +267,8 @@
     import { mount as overviewMount }             from './js/modules/overview.js';
     import { mount as clientsMount,
              unmount as clientsUnmount }          from './js/modules/clients.js';
+    import { mount as projectsMount,
+             unmount as projectsUnmount }         from './js/modules/projects.js';
 
     /* Expose sidebar helpers to inline onclick attributes */
     window.openSidebar  = openSidebar;
@@ -292,8 +294,9 @@
     });
 
     /*  Route registration  */
-    registerRoute('overview', { mount: overviewMount });
-    registerRoute('clients',  { mount: clientsMount, unmount: clientsUnmount });
+    registerRoute('overview',  { mount: overviewMount });
+    registerRoute('clients',   { mount: clientsMount,  unmount: clientsUnmount  });
+    registerRoute('projects',  { mount: projectsMount, unmount: projectsUnmount });
 
     /* Stub placeholder for modules not yet implemented */
     const stub = (label) => ({
@@ -306,12 +309,10 @@
                 d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z"/>
             </svg>
             <p class="font-medium text-lg" style="color:var(--clr-text-muted)">${label}</p>
-            <p>Coming soon  this module is not yet implemented.</p>
+            <p>Coming soon — this module is not yet implemented.</p>
           </div>`;
       },
     });
-
-    registerRoute('projects',  stub('Projects'));
     registerRoute('invoices',  stub('Invoices'));
     registerRoute('finances',  stub('Finances'));
     registerRoute('settings',  stub('Settings'));

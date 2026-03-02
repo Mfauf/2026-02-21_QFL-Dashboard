@@ -157,6 +157,16 @@ body {
   color: var(--clr-success);
   border: 1px solid var(--clr-success-ring);
 }
+.badge-on-hold {
+  background-color: var(--clr-info-bg);
+  color: var(--clr-info);
+  border: 1px solid var(--clr-info-ring);
+}
+.badge-cancelled {
+  background-color: rgba(100,116,139,0.12);
+  color: var(--clr-text-faint);
+  border: 1px solid rgba(100,116,139,0.25);
+}
 
 /* ── Skeleton loader ────────────────────────────────────────────────────── */
 @keyframes shimmer {
