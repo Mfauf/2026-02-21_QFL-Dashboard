@@ -31,6 +31,7 @@ export async function mount(container) {
 }
 
 export function unmount() {
+  document.getElementById('qfl-status-menu')?.remove();
   _container = null;
 }
 
@@ -131,31 +132,41 @@ function renderTable(clients) {
     btn.addEventListener('click', () => confirmDelete(Number(btn.dataset.id), btn.dataset.name));
   });
 
-  // Quick status dropdown — toggle open/close
-  tbody.querySelectorAll('[data-action="status-btn"]').forEach(btn => {
-    btn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      const id   = btn.dataset.id;
-      const menu = tbody.querySelector(`[data-status-menu="${id}"]`);
-      // Close any other open menus first
-      tbody.querySelectorAll('.status-menu').forEach(m => {
-        if (m !== menu) m.classList.add('hidden');
-      });
-      menu?.classList.toggle('hidden');
+  // ── Floating status menu (fixed-position, escapes all overflow clipping) ──
+  let statusMenu = document.getElementById('qfl-status-menu');
+  if (!statusMenu) {
+    statusMenu = document.createElement('div');
+    statusMenu.id = 'qfl-status-menu';
+    statusMenu.className = 'hidden';
+    statusMenu.innerHTML = `
+      <button class="w-full text-left px-3 py-2 text-xs font-medium flex items-center gap-2
+                     transition-colors hover:bg-[var(--clr-surface-3)]"
+              data-action="set-status" data-status="active">
+        <span class="badge badge-active pointer-events-none">Active</span>
+      </button>
+      <button class="w-full text-left px-3 py-2 text-xs font-medium flex items-center gap-2
+                     transition-colors hover:bg-[var(--clr-surface-3)]"
+              data-action="set-status" data-status="inactive">
+        <span class="badge badge-inactive pointer-events-none">Inactive</span>
+      </button>`;
+    Object.assign(statusMenu.style, {
+      position: 'fixed', zIndex: '9999', minWidth: '7rem',
+      borderRadius: '0.5rem', overflow: 'hidden',
+      boxShadow: '0 8px 24px rgba(0,0,0,.45)',
+      background: 'var(--clr-surface-2)',
+      border: '1px solid var(--clr-border)',
     });
-  });
-
-  // Quick status — set new value
-  tbody.querySelectorAll('[data-action="set-status"]').forEach(btn => {
-    btn.addEventListener('click', async (e) => {
+    document.body.appendChild(statusMenu);
+    // Delegate set-status clicks — wired once at creation
+    statusMenu.addEventListener('click', async (e) => {
       e.stopPropagation();
-      const id     = Number(btn.dataset.id);
+      const btn = e.target.closest('[data-action="set-status"]');
+      if (!btn) return;
+      const id     = Number(statusMenu.dataset.targetId);
       const status = btn.dataset.status;
-      // Close the menu immediately for snappy UX
-      btn.closest('.status-menu')?.classList.add('hidden');
+      statusMenu.classList.add('hidden');
       try {
         await updateRecord('clients', id, { status });
-        // Patch the local cache so we don't reload the whole list
         const client = _allClients.find(c => c.id === id);
         if (client) client.status = status;
         renderStats();
@@ -165,6 +176,27 @@ function renderTable(clients) {
         console.error('[Clients] Status update error:', err);
         toast('Failed to update status.', 'error');
       }
+    });
+  }
+
+  // Quick status badge — position floating menu above badge on click
+  tbody.querySelectorAll('[data-action="status-btn"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id = btn.dataset.id;
+      // Toggle closed if already open for this same client
+      if (statusMenu.dataset.targetId === id && !statusMenu.classList.contains('hidden')) {
+        statusMenu.classList.add('hidden');
+        return;
+      }
+      statusMenu.dataset.targetId = id;
+      statusMenu.classList.remove('hidden');
+      requestAnimationFrame(() => {
+        const rect = btn.getBoundingClientRect();
+        const mh   = statusMenu.offsetHeight;
+        statusMenu.style.left = `${rect.left}px`;
+        statusMenu.style.top  = `${rect.top - mh - 4}px`;
+      });
     });
   });
 }
@@ -208,29 +240,13 @@ function rowHTML(c) {
         ${[c.city, c.country].filter(Boolean).map(escapeHtml).join(', ') || '—'}
       </td>
 
-      <!-- Status — clickable badge opens quick-change dropdown -->
+      <!-- Status — clickable badge opens floating fixed-position menu -->
       <td class="td-cell">
-        <div class="relative inline-block">
-          <button class="badge ${badgeCls} cursor-pointer"
-                  data-action="status-btn" data-id="${c.id}"
-                  title="Change status">
-            ${statusLabel}
-          </button>
-          <div class="status-menu hidden absolute left-0 bottom-full mb-1 z-20 rounded-lg shadow-lg overflow-hidden"
-               style="min-width:7rem; background:var(--clr-surface-2); border:1px solid var(--clr-border)"
-               data-status-menu="${c.id}">
-            <button class="w-full text-left px-3 py-2 text-xs font-medium flex items-center gap-2
-                           transition-colors hover:bg-[var(--clr-surface-3)]"
-                    data-action="set-status" data-id="${c.id}" data-status="active">
-              <span class="badge badge-active pointer-events-none">Active</span>
-            </button>
-            <button class="w-full text-left px-3 py-2 text-xs font-medium flex items-center gap-2
-                           transition-colors hover:bg-[var(--clr-surface-3)]"
-                    data-action="set-status" data-id="${c.id}" data-status="inactive">
-              <span class="badge badge-inactive pointer-events-none">Inactive</span>
-            </button>
-          </div>
-        </div>
+        <button class="badge ${badgeCls} cursor-pointer"
+                data-action="status-btn" data-id="${c.id}"
+                title="Change status">
+          ${statusLabel}
+        </button>
       </td>
 
       <!-- Added -->
@@ -404,7 +420,7 @@ function bindListeners() {
   _container.querySelector('#btn-add-client')?.addEventListener('click', openAddModal);
   // Close any open status dropdowns when clicking outside the table
   document.addEventListener('click', () => {
-    _container?.querySelectorAll('.status-menu').forEach(m => m.classList.add('hidden'));
+    document.getElementById('qfl-status-menu')?.classList.add('hidden');
   }, { capture: false });
   // Search input (debounced)
   const searchInput = _container.querySelector('#clients-search');
