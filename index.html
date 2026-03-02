@@ -35,6 +35,9 @@
   <!-- Tailwind CSS (production build — tree-shaken, minified; loaded after styles.css so utilities win by source order) -->
   <link rel="stylesheet" href="css/tailwind.css" />
 
+  <!-- PeerJS — WebRTC peer-to-peer (used by local sync) -->
+  <script src="https://unpkg.com/peerjs@1.5.4/dist/peerjs.min.js"></script>
+
   <!-- Chart.js — self-hosted vendor bundle -->
   <script src="js/vendor/chart.umd.min.js"></script>
 </head>
@@ -349,6 +352,7 @@
     import { initRouter, registerRoute }          from './js/router.js';
     import { initNotifications }                 from './js/notif-ui.js';
     import { watchSystemTheme }                  from './js/theme.js';
+    import { getOrCreateUID, openPeer }           from './js/sync.js';
     import { mount as overviewMount }             from './js/modules/overview.js';
     import { mount as clientsMount,
              unmount as clientsUnmount }          from './js/modules/clients.js';
@@ -445,6 +449,19 @@
 
     /* Watch for OS colour-scheme changes and re-apply when pref = 'system' */
     watchSystemTheme();
+
+    /* Init device UID + open PeerJS peer so this device can receive incoming
+       sync requests at any time, not only when Settings is open */
+    getOrCreateUID()
+      .then(uid => openPeer(uid, () => {}))
+      .catch(err => console.warn('[Sync] Peer init failed:', err));
+
+    /* Show a toast whenever an incoming sync completes */
+    window.addEventListener('qfl:synced', (e) => {
+      if (e.detail?.role === 'responder') {
+        import('./js/ui.js').then(m => m.toast('Sync complete — data merged from another device.', 'success'));
+      }
+    });
 
     /* Start the hash-based router */
     initRouter();

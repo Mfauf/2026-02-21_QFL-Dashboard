@@ -12,7 +12,7 @@
  */
 
 const DB_NAME    = 'QFLDashboard';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 /** @type {IDBDatabase|null} */
 let _db = null;
@@ -53,6 +53,11 @@ export function openDB() {
         const is = db.createObjectStore('invoices', { keyPath: 'id', autoIncrement: true });
         is.createIndex('clientId', 'clientId', { unique: false });
         is.createIndex('status',   'status',   { unique: false });
+      }
+
+      // v2: key-value meta store (device UID, etc.)
+      if (!db.objectStoreNames.contains('meta')) {
+        db.createObjectStore('meta', { keyPath: 'key' });
       }
     };
 
@@ -214,4 +219,46 @@ export async function bulkAddRecords(storeName, records) {
     tx.onerror    = () => reject(tx.error);
     tx.onabort    = () => reject(tx.error);
   });
+}
+
+/**
+ * Insert/replace an array of records preserving their original IDs.
+ * Used by sync to restore records without losing cross-store foreign-key references.
+ * @param {string} storeName
+ * @param {object[]} records
+ * @returns {Promise<void>}
+ */
+export async function bulkPutRecords(storeName, records) {
+  if (!records?.length) return;
+  const db = await openDB();
+  const tx = db.transaction(storeName, 'readwrite');
+  const st = tx.objectStore(storeName);
+  for (const rec of records) st.put(rec);  // put preserves id
+  return new Promise((resolve, reject) => {
+    tx.oncomplete = () => resolve();
+    tx.onerror    = () => reject(tx.error);
+    tx.onabort    = () => reject(tx.error);
+  });
+}
+
+/**
+ * Read a value from the meta key-value store.
+ * @param {string} key
+ * @returns {Promise<any|undefined>}
+ */
+export async function getMetaValue(key) {
+  const db  = await openDB();
+  const row = await promisify(db.transaction('meta').objectStore('meta').get(key));
+  return row?.value;
+}
+
+/**
+ * Write a value to the meta key-value store.
+ * @param {string} key
+ * @param {any}    value
+ * @returns {Promise<void>}
+ */
+export async function setMetaValue(key, value) {
+  const db = await openDB();
+  await promisify(db.transaction('meta', 'readwrite').objectStore('meta').put({ key, value }));
 }

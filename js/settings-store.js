@@ -41,6 +41,9 @@ export const DEFAULTS = {
   appearance: {
     theme: 'system',   // 'system' | 'dark' | 'light'
   },
+  sync: {
+    peerUID: '',       // saved peer device UID for quick re-sync
+  },
 };
 
 /** ── Read ─────────────────────────────────────────────────────────────── */
