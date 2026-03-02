@@ -38,6 +38,9 @@ export const DEFAULTS = {
       'Freelancer Fee', 'Tax', 'Hosting', 'Transport', 'Education', 'Other',
     ],
   },
+  appearance: {
+    theme: 'system',   // 'system' | 'dark' | 'light'
+  },
 };
 
 /** ── Read ─────────────────────────────────────────────────────────────── */

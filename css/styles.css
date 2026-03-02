@@ -515,4 +515,62 @@ body {
   color: var(--clr-danger);
 }
 
+/* ── Light Theme ─────────────────────────────────────────────────────────
+   Applied when <html data-theme="light">.
+   All other styling uses CSS variables from :root so they adapt automatically.
+───────────────────────────────────────────────────────────────────────── */
+[data-theme="light"] {
+  --clr-bg:         #f1f5f9;
+  --clr-surface:    #ffffff;
+  --clr-surface-2:  #f8fafc;
+  --clr-surface-3:  #e2e8f0;
+
+  --clr-border:     rgba(30, 41, 59, 0.12);
+  --clr-border-mid: rgba(30, 41, 59, 0.2);
+
+  --clr-primary:       #2563eb;
+  --clr-primary-light: #3b82f6;
+  --clr-primary-dim:   rgba(37, 99, 235, 0.08);
+  --clr-primary-ring:  rgba(37, 99, 235, 0.25);
+
+  --clr-text:        #0f172a;
+  --clr-text-sub:    #1e293b;
+  --clr-text-muted:  #475569;
+  --clr-text-faint:  #94a3b8;
+
+  --clr-success:      #15803d;
+  --clr-success-bg:   rgba(21, 128, 61, 0.08);
+  --clr-success-ring: rgba(21, 128, 61, 0.2);
+
+  --clr-warning:      #b45309;
+  --clr-warning-bg:   rgba(180, 83, 9, 0.08);
+  --clr-warning-ring: rgba(180, 83, 9, 0.2);
+
+  --clr-danger:       #dc2626;
+  --clr-danger-bg:    rgba(220, 38, 38, 0.08);
+  --clr-danger-ring:  rgba(220, 38, 38, 0.2);
+
+  --clr-info:         #4f46e5;
+  --clr-info-bg:      rgba(79, 70, 229, 0.08);
+  --clr-info-ring:    rgba(79, 70, 229, 0.2);
+}
+
+/* The header has a hardcoded dark rgba background — override it */
+[data-theme="light"] header {
+  background: rgba(248, 250, 252, 0.92) !important;
+}
+
+/* Toast uses a hardcoded dark background — override it */
+[data-theme="light"] .toast {
+  background: rgba(255, 255, 255, 0.97) !important;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+/* Tailwind's text-white is used on titles/icons throughout the layout.
+   In light mode, override it so text remains readable on light surfaces.
+   Exception: elements inside the primary-color logo box look fine with white. */
+[data-theme="light"] .text-white {
+  color: var(--clr-text) !important;
+}
+
 

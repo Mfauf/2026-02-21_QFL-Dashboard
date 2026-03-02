@@ -7,6 +7,23 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg?v=2" />
   <link rel="shortcut icon" href="favicon.svg?v=2" />
 
+  <!-- Apply saved theme before stylesheets load to prevent flash of wrong theme -->
+  <script>
+    (function () {
+      try {
+        var s = JSON.parse(localStorage.getItem('qfl_settings') || '{}');
+        var pref = (s.appearance && s.appearance.theme) || 'system';
+        var resolved = pref === 'light' ? 'light'
+                     : pref === 'dark'  ? 'dark'
+                     : window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+        document.documentElement.dataset.theme = resolved;
+      } catch (e) {
+        document.documentElement.dataset.theme =
+          window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      }
+    })();
+  </script>
+
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -331,6 +348,7 @@
     import { initUI, openSidebar, closeSidebar } from './js/ui.js';
     import { initRouter, registerRoute }          from './js/router.js';
     import { initNotifications }                 from './js/notif-ui.js';
+    import { watchSystemTheme }                  from './js/theme.js';
     import { mount as overviewMount }             from './js/modules/overview.js';
     import { mount as clientsMount,
              unmount as clientsUnmount }          from './js/modules/clients.js';
@@ -424,6 +442,9 @@
 
     /* Init notification bell + panel */
     initNotifications();
+
+    /* Watch for OS colour-scheme changes and re-apply when pref = 'system' */
+    watchSystemTheme();
 
     /* Start the hash-based router */
     initRouter();

@@ -16,6 +16,7 @@ import { getSettings, saveSettings, DEFAULTS } from '../settings-store.js';
 import { getAllRecords, clearStore, bulkAddRecords } from '../db.js';
 import { toast, openConfirm }          from '../ui.js';
 import { escapeHtml }                  from '../utils.js';
+import { applyTheme }                  from '../theme.js';
 
 /* ── Module state ───────────────────────────────────────────────────────── */
 let _container = null;
@@ -50,6 +51,9 @@ function populate() {
   _v('si-prefix',  s.invoice.prefix);
   _v('si-terms',   s.invoice.paymentTerms);
 
+  // Appearance
+  updateThemeBtns(s.appearance?.theme ?? 'system');
+
   // Category chip lists
   renderChips('cats-project', s.categories.project);
   renderChips('cats-income',  s.categories.income);
@@ -76,6 +80,15 @@ function renderAvatarPreview(avatarDataUrl, name) {
 function _v(id, value) {
   const el = _container?.querySelector(`#${id}`);
   if (el) el.value = value ?? '';
+}
+
+/* ── Theme button active state ──────────────────────────────────────────── */
+function updateThemeBtns(active) {
+  _container?.querySelectorAll('[data-theme-btn]').forEach(btn => {
+    const on = btn.dataset.themeBtn === active;
+    btn.classList.toggle('filter-active', on);
+    btn.setAttribute('aria-pressed', String(on));
+  });
 }
 
 /* ── Chips renderer ─────────────────────────────────────────────────────── */
@@ -321,6 +334,17 @@ function bindAll() {
     input?.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doAdd(); } });
   });
 
+  // ── Theme toggle
+  _container.querySelectorAll('[data-theme-btn]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pref = btn.dataset.themeBtn;
+      saveSettings({ appearance: { theme: pref } });
+      applyTheme(pref);
+      updateThemeBtns(pref);
+      toast(`Theme set to ${pref}.`, 'success');
+    });
+  });
+
   // ── Export
   _container.querySelector('#btn-export')?.addEventListener('click', exportData);
 
@@ -476,7 +500,59 @@ function shellHTML() {
       })}
 
       <!-- ═══════════════════════════════════════════════════════════
-           SECTION 6 — Data
+           SECTION 6 — Appearance
+      ════════════════════════════════════════════════════════════ -->
+      <div class="card p-6">
+        <h3 class="text-base font-semibold text-[var(--clr-text)] mb-1">Appearance</h3>
+        <p class="text-sm text-[var(--clr-text-faint)] mb-5">
+          Choose how the dashboard looks.
+          <em>System</em> automatically follows your device preference.
+        </p>
+
+        <div class="grid grid-cols-3 gap-3">
+
+          <!-- System -->
+          <button type="button" data-theme-btn="system"
+                  class="filter-btn flex flex-col items-center gap-2 py-4 rounded-xl"
+                  aria-pressed="false" aria-label="System theme">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0
+                   012-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z"/>
+            </svg>
+            <span class="text-xs font-medium">System</span>
+          </button>
+
+          <!-- Light -->
+          <button type="button" data-theme-btn="light"
+                  class="filter-btn flex flex-col items-center gap-2 py-4 rounded-xl"
+                  aria-pressed="false" aria-label="Light theme">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707
+                   M6.343 17.657l-.707.707m12.728 0l-.707-.707M6.343 6.343l-.707-.707
+                   M12 8a4 4 0 100 8 4 4 0 000-8z"/>
+            </svg>
+            <span class="text-xs font-medium">Light</span>
+          </button>
+
+          <!-- Dark -->
+          <button type="button" data-theme-btn="dark"
+                  class="filter-btn flex flex-col items-center gap-2 py-4 rounded-xl"
+                  aria-pressed="false" aria-label="Dark theme">
+            <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003
+                   9.003 0 008.354-5.646z"/>
+            </svg>
+            <span class="text-xs font-medium">Dark</span>
+          </button>
+
+        </div>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════
+           SECTION 7 — Data
       ════════════════════════════════════════════════════════════ -->
       <div class="card p-6">
         <h3 class="text-base font-semibold text-[var(--clr-text)] mb-1">Data</h3>
