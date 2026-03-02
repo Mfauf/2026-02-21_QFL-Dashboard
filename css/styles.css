@@ -167,6 +167,22 @@ body {
   color: var(--clr-text-faint);
   border: 1px solid rgba(100,116,139,0.25);
 }
+/* Invoice-specific badges */
+.badge-draft {
+  background-color: rgba(100,116,139,0.12);
+  color: var(--clr-text-muted);
+  border: 1px solid rgba(100,116,139,0.3);
+}
+.badge-sent {
+  background-color: var(--clr-primary-dim);
+  color: var(--clr-primary-light);
+  border: 1px solid var(--clr-primary-ring);
+}
+.badge-overdue {
+  background-color: var(--clr-danger-bg);
+  color: var(--clr-danger);
+  border: 1px solid var(--clr-danger-ring);
+}
 
 /* ── Skeleton loader ────────────────────────────────────────────────────── */
 @keyframes shimmer {
