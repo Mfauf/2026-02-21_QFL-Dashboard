@@ -130,6 +130,43 @@ function renderTable(clients) {
   tbody.querySelectorAll('[data-action="delete"]').forEach(btn => {
     btn.addEventListener('click', () => confirmDelete(Number(btn.dataset.id), btn.dataset.name));
   });
+
+  // Quick status dropdown — toggle open/close
+  tbody.querySelectorAll('[data-action="status-btn"]').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const id   = btn.dataset.id;
+      const menu = tbody.querySelector(`[data-status-menu="${id}"]`);
+      // Close any other open menus first
+      tbody.querySelectorAll('.status-menu').forEach(m => {
+        if (m !== menu) m.classList.add('hidden');
+      });
+      menu?.classList.toggle('hidden');
+    });
+  });
+
+  // Quick status — set new value
+  tbody.querySelectorAll('[data-action="set-status"]').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const id     = Number(btn.dataset.id);
+      const status = btn.dataset.status;
+      // Close the menu immediately for snappy UX
+      btn.closest('.status-menu')?.classList.add('hidden');
+      try {
+        await updateRecord('clients', id, { status });
+        // Patch the local cache so we don't reload the whole list
+        const client = _allClients.find(c => c.id === id);
+        if (client) client.status = status;
+        renderStats();
+        renderTable(applyFilters());
+        toast(`Status updated to ${ status === 'active' ? 'Active' : 'Inactive' }.`, 'success');
+      } catch (err) {
+        console.error('[Clients] Status update error:', err);
+        toast('Failed to update status.', 'error');
+      }
+    });
+  });
 }
 
 /* ── Row HTML ───────────────────────────────────────────────────────────── */
@@ -345,7 +382,10 @@ function confirmDelete(id, name) {
 function bindListeners() {
   // Add client button
   _container.querySelector('#btn-add-client')?.addEventListener('click', openAddModal);
-
+  // Close any open status dropdowns when clicking outside the table
+  document.addEventListener('click', () => {
+    _container?.querySelectorAll('.status-menu').forEach(m => m.classList.add('hidden'));
+  }, { capture: false });
   // Search input (debounced)
   const searchInput = _container.querySelector('#clients-search');
   if (searchInput) {
