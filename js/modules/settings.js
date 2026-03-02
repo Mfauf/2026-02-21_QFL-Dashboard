@@ -36,12 +36,15 @@ export function unmount() {
 function populate() {
   const s = getSettings();
 
-  // Profile
+  // Profile fields
   _v('sp-name',     s.profile.name);
   _v('sp-company',  s.profile.company);
   _v('sp-email',    s.profile.email);
   _v('sp-phone',    s.profile.phone);
   _v('sp-tagline',  s.profile.tagline);
+
+  // Avatar preview
+  renderAvatarPreview(s.profile.avatar, s.profile.name);
 
   // Invoice defaults
   _v('si-prefix',  s.invoice.prefix);
@@ -51,6 +54,22 @@ function populate() {
   renderChips('cats-project', s.categories.project);
   renderChips('cats-income',  s.categories.income);
   renderChips('cats-expense', s.categories.expense);
+}
+
+/* ── Avatar preview renderer ────────────────────────────────────────────── */
+function renderAvatarPreview(avatarDataUrl, name) {
+  const el = _container?.querySelector('#sp-avatar-preview');
+  if (!el) return;
+
+  if (avatarDataUrl) {
+    el.innerHTML = `<img src="${avatarDataUrl}" alt="profile picture"
+      class="w-full h-full object-cover" style="border-radius:inherit"/>`;
+  } else {
+    // Show initials as fallback
+    const initials = (name || '?').split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+    el.textContent = initials;
+    el.style.background = 'linear-gradient(135deg,#60a5fa,#3b82f6)';
+  }
 }
 
 /** Set value on a form element by id */
@@ -158,12 +177,46 @@ async function exportData() {
 
 /* ── Bind all listeners ─────────────────────────────────────────────────── */
 function bindAll() {
+  // ── Avatar: clicking the preview triggers the hidden file input
+  _container.querySelector('#sp-avatar-preview')?.addEventListener('click', () => {
+    _container.querySelector('#sp-avatar-input')?.click();
+  });
+
+  // ── Avatar file picker
+  _container.querySelector('#sp-avatar-input')?.addEventListener('change', (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (!file.type.startsWith('image/')) { toast('Please select an image file.', 'error'); return; }
+    if (file.size > 2 * 1024 * 1024)    { toast('Image must be under 2 MB.',     'error'); return; }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const dataUrl = ev.target.result;
+      saveSettings({ profile: { avatar: dataUrl } });
+      renderAvatarPreview(dataUrl, getSettings().profile.name);
+      window.refreshSidebarProfile?.();
+      toast('Profile picture updated.', 'success');
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // ── Remove avatar
+  _container.querySelector('#sp-avatar-remove')?.addEventListener('click', () => {
+    saveSettings({ profile: { avatar: '' } });
+    renderAvatarPreview('', getSettings().profile.name);
+    window.refreshSidebarProfile?.();
+    toast('Profile picture removed.', 'info');
+  });
+
   // ── Profile save
   _container.querySelector('#form-profile')?.addEventListener('submit', (e) => {
     e.preventDefault();
     const fd = new FormData(e.target);
+    // Preserve existing avatar (file input not in FormData when unchanged)
+    const currentAvatar = getSettings().profile.avatar;
     saveSettings({
       profile: {
+        avatar:  currentAvatar,
         name:    fd.get('name')?.trim()    || '',
         company: fd.get('company')?.trim() || '',
         email:   fd.get('email')?.trim()   || '',
@@ -171,6 +224,7 @@ function bindAll() {
         tagline: fd.get('tagline')?.trim() || '',
       },
     });
+    window.refreshSidebarProfile?.();  // reflect in sidebar immediately
     toast('Profile saved.', 'success');
   });
 
@@ -216,7 +270,7 @@ function shellHTML() {
       <p class="text-sm text-[var(--clr-text-faint)] mt-0.5">Manage your profile, preferences and category lists</p>
     </div>
 
-    <div class="space-y-8 max-w-2xl">
+    <div class="space-y-8 w-full">
 
       <!-- ═══════════════════════════════════════════════════════════
            SECTION 1 — Profile
@@ -226,6 +280,28 @@ function shellHTML() {
         <p class="text-sm text-[var(--clr-text-faint)] mb-5">Your name and contact info shown on invoices and the dashboard.</p>
 
         <form id="form-profile" novalidate class="space-y-4">
+
+          <!-- Avatar upload -->
+          <div class="flex items-center gap-5 pb-2">
+            <!-- Clickable avatar circle -->
+            <div id="sp-avatar-preview"
+                 class="avatar w-16 h-16 text-lg text-white shrink-0 cursor-pointer
+                        overflow-hidden ring-2 ring-offset-2 transition-opacity hover:opacity-80"
+                 style="ring-color:var(--clr-primary); ring-offset-color:var(--clr-surface)"
+                 title="Click to upload a profile picture"></div>
+
+            <!-- Hidden file input -->
+            <input id="sp-avatar-input" type="file" accept="image/*" class="hidden"/>
+
+            <div>
+              <p class="text-sm font-medium text-[var(--clr-text)] mb-1">Profile Picture</p>
+              <p class="text-xs text-[var(--clr-text-faint)] mb-2">Click the avatar to upload. JPG, PNG or WebP · max 2 MB.</p>
+              <button id="sp-avatar-remove" type="button"
+                      class="text-xs font-medium transition-colors hover:underline"
+                      style="color:var(--clr-danger)">Remove photo</button>
+            </div>
+          </div>
+
           <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label class="form-label" for="sp-name">Full Name</label>

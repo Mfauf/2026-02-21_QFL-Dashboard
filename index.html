@@ -134,14 +134,15 @@
       </a>
     </nav>
 
-    <!-- User profile -->
+    <!-- User profile — populated dynamically from settings-store -->
     <div class="px-4 py-4" style="border-top:1px solid var(--clr-border)">
       <div class="flex items-center gap-3 px-3 py-2 rounded-lg" style="background:var(--clr-surface-2)">
-        <div class="avatar w-8 h-8 text-white shrink-0 text-xs"
-             style="background:linear-gradient(135deg,#60a5fa,#3b82f6)">MF</div>
+        <div id="sidebar-avatar"
+             class="avatar w-8 h-8 text-white shrink-0 text-xs overflow-hidden"
+             style="background:linear-gradient(135deg,#60a5fa,#3b82f6)"></div>
         <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-white truncate">Mohammed Fauzan</p>
-          <p class="text-xs truncate" style="color:var(--clr-text-faint)">Freelancer  Qatar</p>
+          <p id="sidebar-name" class="text-sm font-medium text-white truncate">—</p>
+          <p id="sidebar-tagline" class="text-xs truncate" style="color:var(--clr-text-faint)">QFL Dashboard</p>
         </div>
       </div>
     </div>
@@ -323,6 +324,34 @@
       },
     });
     // settings route now registered above as a real module
+
+    /* ── Sidebar profile — reads from settings-store localStorage ── */
+    window.refreshSidebarProfile = function () {
+      const raw = localStorage.getItem('qfl_settings');
+      const s   = raw ? JSON.parse(raw) : {};
+      const p   = s.profile ?? {};
+
+      const nameEl    = document.getElementById('sidebar-name');
+      const taglineEl = document.getElementById('sidebar-tagline');
+      const avatarEl  = document.getElementById('sidebar-avatar');
+
+      if (nameEl)    nameEl.textContent    = p.name    || 'Your Name';
+      if (taglineEl) taglineEl.textContent = p.tagline || (p.company || 'QFL Dashboard');
+
+      if (avatarEl) {
+        if (p.avatar) {
+          // Show uploaded photo
+          avatarEl.innerHTML = `<img src="${p.avatar}" alt="profile"
+            class="w-full h-full object-cover" style="border-radius:inherit"/>`;
+        } else {
+          // Fallback: initials from name
+          const initials = (p.name || '?')
+            .split(' ').map(w => w[0]).join('').slice(0, 2).toUpperCase();
+          avatarEl.textContent = initials;
+        }
+      }
+    };
+    window.refreshSidebarProfile(); // run once on page load
 
     /* Init shared UI (modal close, escape key, confirm dialog) */
     initUI();

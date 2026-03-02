@@ -19,6 +19,7 @@ export const DEFAULTS = {
     email:    '',
     phone:    '',
     tagline:  '',
+    avatar:   '',   // base64 data URL of the uploaded profile picture
   },
   invoice: {
     prefix:       'INV-',
