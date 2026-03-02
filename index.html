@@ -7,20 +7,8 @@
   <link rel="icon" type="image/svg+xml" href="favicon.svg?v=2" />
   <link rel="shortcut icon" href="favicon.svg?v=2" />
 
-  <!-- Tailwind CSS (CDN) -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <script>
-    /* Map Tailwind to use CSS custom properties from styles.css */
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: {
-            sans: ['Inter', 'system-ui', 'sans-serif'],
-          },
-        },
-      },
-    };
-  </script>
+  <!-- Tailwind CSS (production build — tree-shaken, minified) -->
+  <link rel="stylesheet" href="css/tailwind.css" />
 
   <!-- Google Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -30,8 +18,8 @@
   <!-- App styles (CSS variables + custom utilities Tailwind cannot express) -->
   <link rel="stylesheet" href="css/styles.css" />
 
-  <!-- Chart.js — used by Overview charts -->
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.2/dist/chart.umd.min.js"></script>
+  <!-- Chart.js — self-hosted vendor bundle -->
+  <script src="js/vendor/chart.umd.min.js"></script>
 </head>
 
 <body class="min-h-screen font-sans" style="background:var(--clr-bg); color:var(--clr-text)">

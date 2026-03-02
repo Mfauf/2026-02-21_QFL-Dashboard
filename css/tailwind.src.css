@@ -1,0 +1,9 @@
+/* Tailwind CSS v4 — CSS-first configuration.
+   Content is auto-detected; no tailwind.config.js needed.
+   Theme overrides go inside @theme {}. */
+@import "tailwindcss";
+
+@theme {
+  /* Map font-sans to Inter to match the previous inline tailwind.config */
+  --font-family-sans: 'Inter', system-ui, sans-serif;
+}
