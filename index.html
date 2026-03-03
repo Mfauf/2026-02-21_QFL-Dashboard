@@ -394,7 +394,9 @@
     /*  Route registration  */
     registerRoute('overview',  { mount: overviewMount });
     registerRoute('clients',   { mount: clientsMount,   unmount: clientsUnmount   });
-    registerRoute('projects',  { mount: projectsMount,  unmount: projectsUnmount  });
+    registerRoute('projects',              { mount: projectsMount,  unmount: projectsUnmount  });
+    registerRoute('project/:id',           { mount: projectsMount,  unmount: projectsUnmount  });
+    registerRoute('project/:id/blueprint', { mount: projectsMount,  unmount: projectsUnmount, staticParams: { blueprint: true } });
     registerRoute('invoices',  { mount: invoicesMount,  unmount: invoicesUnmount  });
     registerRoute('finances',  { mount: financesMount,  unmount: financesUnmount  });
     registerRoute('settings',  { mount: settingsMount,  unmount: settingsUnmount  });

@@ -9,17 +9,32 @@ import { openDB } from './db.js';
 /** @type {Map<string, { mount: (el: HTMLElement) => void, unmount?: () => void }>} */
 const _routes = new Map();
 
+/** Pattern routes for parametric paths like 'project/:id' */
+const _patternRoutes = [];
+
 /** Currently active route key */
 let _activeRoute = null;
 let _unmountCurrent = null;
 
 /* ── Register a route ───────────────────────────────────────────────────── */
 /**
- * @param {string} hash — without '#' prefix
- * @param {{ mount: (el: HTMLElement) => void, unmount?: () => void }} module
+ * @param {string} hash — without '#' prefix; supports ':param' segments
+ * @param {{ mount: Function, unmount?: Function, staticParams?: object }} module
  */
 export function registerRoute(hash, module) {
-  _routes.set(hash, module);
+  if (hash.includes(':')) {
+    // Parametric pattern route
+    const paramNames = [];
+    const regexStr   = hash.replace(/:([a-zA-Z_]+)/g, (_, n) => { paramNames.push(n); return '([^/]+)'; });
+    _patternRoutes.push({
+      regex:        new RegExp('^' + regexStr + '$'),
+      paramNames,
+      module:       { mount: module.mount, unmount: module.unmount },
+      staticParams: module.staticParams ?? {},
+    });
+  } else {
+    _routes.set(hash, module);
+  }
 }
 
 /* ── Navigate to a route ────────────────────────────────────────────────── */
@@ -29,9 +44,25 @@ export function navigate(hash) {
 
 /* ── Resolve & mount current hash ───────────────────────────────────────── */
 async function resolve() {
-  const hash  = (window.location.hash || '#overview').replace('#', '');
-  const route = _routes.get(hash) ?? _routes.get('overview');
+  const hash = (window.location.hash || '#overview').replace('#', '');
 
+  // Try exact route first, then pattern routes
+  let route  = _routes.get(hash);
+  let params = {};
+
+  if (!route) {
+    for (const pr of _patternRoutes) {
+      const m = hash.match(pr.regex);
+      if (m) {
+        route = pr.module;
+        pr.paramNames.forEach((name, i) => { params[name] = m[i + 1]; });
+        Object.assign(params, pr.staticParams);
+        break;
+      }
+    }
+  }
+
+  route = route ?? _routes.get('overview');
   if (!route) return;
 
   // Unmount previous view if it provides a cleanup function
@@ -62,18 +93,28 @@ async function resolve() {
     return;
   }
 
-  // Mount the new view
-  route.mount(container);
+  // Mount the new view (params is populated for pattern routes, empty {} for exact routes)
+  route.mount(container, params);
   _unmountCurrent = route.unmount ?? null;
 
-  // Update active nav link styling
+  // Trigger entrance animation on the view container
+  container.classList.remove('qfl-view-in');
+  // Force reflow so removing + re-adding the class restarts the animation
+  void container.offsetWidth;
+  container.classList.add('qfl-view-in');
+  container.addEventListener('animationend', () => container.classList.remove('qfl-view-in'), { once: true });
+
+  // Update active nav link styling.
+  // Sub-routes (project/:id, project/:id/blueprint) map back to 'projects' nav item.
   _activeRoute = hash;
+  const navHash = hash.startsWith('project/') ? 'projects' : hash;
   document.querySelectorAll('.nav-item').forEach(el => {
     const href = el.getAttribute('data-route');
-    el.classList.toggle('nav-active', href === hash);
+    el.classList.toggle('nav-active', href === navHash);
   });
 
-  // Update page header title
+  // Update page title for top-level routes only.
+  // Detail / blueprint sub-routes set their own title inside the module.
   const headerTitle = document.getElementById('page-title');
   const titles = {
     overview: 'Overview',
@@ -83,7 +124,7 @@ async function resolve() {
     finances: 'Finances',
     settings: 'Settings',
   };
-  if (headerTitle) headerTitle.textContent = titles[hash] ?? hash;
+  if (headerTitle && titles[hash]) headerTitle.textContent = titles[hash];
 }
 
 /* ── Init router ────────────────────────────────────────────────────────── */

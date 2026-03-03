@@ -68,6 +68,7 @@ function populate() {
   // Invoice defaults
   _v('si-prefix',  s.invoice.prefix);
   _v('si-terms',   s.invoice.paymentTerms);
+  _v('sb-bp-terms', s.blueprint?.terms ?? '');
 
   // Appearance
   updateThemeBtns(s.appearance?.theme ?? 'system');
@@ -357,6 +358,14 @@ function bindAll() {
     toast('Invoice defaults saved.', 'success');
   });
 
+  // ── Blueprint terms save
+  _container.querySelector('#form-blueprint')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    saveSettings({ blueprint: { terms: fd.get('blueprintTerms')?.trim() || '' } });
+    toast('Blueprint terms saved.', 'success');
+  });
+
   // ── Category add buttons
   ['project', 'income', 'expense'].forEach(type => {
     const listId = `cats-${type}`;
@@ -538,8 +547,28 @@ function shellHTML() {
         </form>
       </div>
 
-      <!-- ═══════════════════════════════════════════════════════════
-           SECTION 3 — Project Categories
+      <!-- ═══════════════════════════════════════════════════════════           SECTION: Blueprint / Proposal
+      ═════════════════════════════════════════════════════ -->
+      <div class="card p-6">
+        <h3 class="text-base font-semibold text-[var(--clr-text)] mb-1">Blueprint / Proposal</h3>
+        <p class="text-sm text-[var(--clr-text-faint)] mb-5">Terms of Agreement printed at the bottom of every Project Blueprint PDF.</p>
+
+        <form id="form-blueprint" novalidate class="space-y-4">
+          <div>
+            <label class="form-label" for="sb-bp-terms">Terms of Agreement</label>
+            <textarea id="sb-bp-terms" name="blueprintTerms" class="form-textarea" rows="6"
+                      placeholder="Enter your standard terms and conditions..."></textarea>
+            <p class="text-xs mt-1.5" style="color:var(--clr-text-faint)">
+              These terms appear verbatim at the bottom of every exported Blueprint PDF. Newlines are preserved.
+            </p>
+          </div>
+          <div class="flex justify-end pt-1">
+            <button type="submit" class="btn btn-primary">Save Terms</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════           SECTION 3 — Project Categories
       ════════════════════════════════════════════════════════════ -->
       ${categorySection({
         id:          'project',

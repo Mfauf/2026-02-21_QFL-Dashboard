@@ -596,4 +596,27 @@ body {
   color: var(--clr-text) !important;
 }
 
+/* ── View transition animations ─────────────────────────────────────────── */
+@keyframes qfl-view-in {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0);    }
+}
 
+@keyframes qfl-fade-in {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+.qfl-view-in {
+  animation: qfl-view-in 240ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+/* Sub-view (detail ↔ blueprint) slides in from the right */
+@keyframes qfl-slide-in {
+  from { opacity: 0; transform: translateX(18px); }
+  to   { opacity: 1; transform: translateX(0);     }
+}
+
+.qfl-slide-in {
+  animation: qfl-slide-in 220ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
