@@ -5,6 +5,104 @@
 
 import { getAll, unreadCount, markAllRead, clearAll, clearOne } from './notifications.js';
 
+/* ── Live timer state (not persisted, updated via window events) ─────────── */
+let _liveTimer = { status: 'idle', elapsed: 0, projectName: '' };
+
+function formatTimerMs(ms) {
+  const total = Math.floor(ms / 1000);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  return [h, m, s].map(n => String(n).padStart(2, '0')).join(':');
+}
+
+function renderTimerCard() {
+  const card = document.getElementById('timer-live-card');
+  if (!card) return;
+
+  if (_liveTimer.status === 'idle') {
+    card.style.display = 'none';
+    return;
+  }
+
+  const isRunning = _liveTimer.status === 'running';
+  card.style.display = 'block';
+  card.innerHTML = `
+    <div style="margin:12px 12px 0;border-radius:12px;overflow:hidden;
+                border:1px solid var(--clr-success-ring);background:var(--clr-surface-2)">
+      <!-- Status bar -->
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;
+                  background:${isRunning ? 'var(--clr-success-bg)' : 'var(--clr-surface-3)'}">
+        <span style="display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0;
+                     background:${isRunning ? 'var(--clr-success)' : 'var(--clr-text-faint)'};
+                     ${isRunning ? 'animation:timer-dot-pulse 1.4s ease-in-out infinite' : ''}"></span>
+        <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+                     color:${isRunning ? 'var(--clr-success)' : 'var(--clr-text-faint)'}">
+          ${isRunning ? 'Timer Running' : 'Timer Paused'}
+        </span>
+      </div>
+      <!-- Body -->
+      <div style="padding:10px 14px 12px;display:flex;align-items:center;justify-content:space-between;gap:12px">
+        <div>
+          <p id="notif-timer-display"
+             style="font-size:1.75rem;font-weight:800;font-variant-numeric:tabular-nums;
+                    letter-spacing:-0.03em;line-height:1;
+                    color:${isRunning ? 'var(--clr-success)' : 'var(--clr-text-muted)'}">
+            ${formatTimerMs(_liveTimer.elapsed)}
+          </p>
+          <p style="font-size:11px;color:var(--clr-text-faint);margin-top:4px;
+                    max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
+            ${esc(_liveTimer.projectName)}
+          </p>
+        </div>
+        <div style="display:flex;gap:6px;flex-shrink:0">
+          ${isRunning
+            ? `<button id="notif-timer-pause"
+                       style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;
+                              padding:6px 11px;border-radius:8px;border:1px solid var(--clr-border-mid);
+                              background:var(--clr-surface);color:var(--clr-text-muted);cursor:pointer">
+                 <svg style="width:11px;height:11px;flex-shrink:0" fill="currentColor" viewBox="0 0 24 24">
+                   <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
+                 </svg>Pause
+               </button>`
+            : `<button id="notif-timer-resume"
+                       style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;
+                              padding:6px 11px;border-radius:8px;border:1px solid var(--clr-success-ring);
+                              background:var(--clr-success-bg);color:var(--clr-success);cursor:pointer">
+                 <svg style="width:11px;height:11px;flex-shrink:0" fill="currentColor" viewBox="0 0 24 24">
+                   <polygon points="5 3 19 12 5 21 5 3"/>
+                 </svg>Resume
+               </button>`}
+          <button id="notif-timer-stop"
+                  style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;
+                         padding:6px 11px;border-radius:8px;border:1px solid var(--clr-danger-ring);
+                         background:var(--clr-danger-bg);color:var(--clr-danger);cursor:pointer">
+            <svg style="width:11px;height:11px;flex-shrink:0" fill="currentColor" viewBox="0 0 24 24">
+              <rect x="4" y="4" width="16" height="16" rx="2"/>
+            </svg>Stop
+          </button>
+        </div>
+      </div>
+    </div>`;
+
+  card.querySelector('#notif-timer-pause')?.addEventListener('click', () => {
+    window._qflTimerControls?.pause();
+  });
+  card.querySelector('#notif-timer-resume')?.addEventListener('click', () => {
+    window._qflTimerControls?.resume();
+  });
+  card.querySelector('#notif-timer-stop')?.addEventListener('click', () => {
+    window._qflTimerControls?.stop();
+  });
+}
+
+function updateTimerBell() {
+  const btn = document.getElementById('btn-notifications');
+  if (!btn) return;
+  if (_liveTimer.status !== 'idle') btn.classList.add('timer-active');
+  else                              btn.classList.remove('timer-active');
+}
+
 /* ── Icon SVG per notification type ─────────────────────────────────────── */
 function iconSVG(type) {
   if (type === 'overdue') {
@@ -63,6 +161,7 @@ function openPanel() {
   if (!overlay || !drawer) return;
 
   renderList();
+  renderTimerCard();   // show live timer card whenever panel opens
 
   overlay.classList.remove('hidden');
   requestAnimationFrame(() => {
@@ -186,5 +285,34 @@ export function initNotifications() {
   // ESC key closes panel
   document.addEventListener('keydown', e => {
     if (e.key === 'Escape') closePanel();
+  });
+
+  // ── Live timer events ───────────────────────────────────────────────────
+  // Full state change (start / pause / resume): re-render card + update bell
+  window.addEventListener('qfl:timer-updated', e => {
+    _liveTimer = {
+      status:      e.detail.status,
+      elapsed:     e.detail.elapsed,
+      projectName: e.detail.projectName,
+    };
+    renderTimerCard();
+    updateTimerBell();
+  });
+
+  // Every-second tick while running: just update the time display text
+  window.addEventListener('qfl:timer-tick', e => {
+    _liveTimer.elapsed = e.detail.elapsed;
+    _liveTimer.status  = e.detail.status;
+    const display = document.getElementById('notif-timer-display');
+    if (display) {
+      display.textContent = formatTimerMs(_liveTimer.elapsed);
+    }
+  });
+
+  // Timer stopped: hide card, remove bell ring
+  window.addEventListener('qfl:timer-stopped', () => {
+    _liveTimer = { status: 'idle', elapsed: 0, projectName: '' };
+    renderTimerCard();
+    updateTimerBell();
   });
 }

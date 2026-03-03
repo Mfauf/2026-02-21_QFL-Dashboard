@@ -30,6 +30,19 @@ let _milestones        = [];       // milestones for the current project
 let _sessions          = [];       // time-tracking sessions for the current project
 let _timerState          = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
 let _collapsedMilestones = new Set(); // string milestone IDs whose sessions panel is collapsed
+let _timerProjectName    = '';        // project name captured when timer starts (for notif panel)
+
+/* ── Timer event helper ───────────────────────────────────────────── */
+function dispatchTimerEvent(eventName) {
+  window.dispatchEvent(new CustomEvent(eventName, {
+    detail: {
+      status:      _timerState.status,
+      elapsed:     getElapsedMs(),
+      projectName: _timerProjectName,
+      projectId:   _currentProjectId,
+    },
+  }));
+}
 
 /* ── Project status config ──────────────────────────────────────────────── */
 const STATUSES = [
@@ -41,14 +54,23 @@ const STATUSES = [
 
 /* ── Mount / unmount ────────────────────────────────────────────────────── */
 export async function mount(container) {
-  _container        = container;
-  _currentProjectId = null;
-  _milestones       = [];
-  _sessions         = [];
-  _timerState       = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
-  _filter           = 'all';
-  _searchQ          = '';
-  _dateRange        = 'all';
+  _container = container;
+
+  // If a timer is already running/paused, preserve the project context so the
+  // user returns straight to the detail view they left. Otherwise do a full reset.
+  const timerIsActive = _timerState.status !== 'idle';
+  if (!timerIsActive) {
+    _currentProjectId    = null;
+    _milestones          = [];
+    _sessions            = [];
+    _timerState          = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
+    _timerProjectName    = '';
+    _collapsedMilestones.clear();
+  }
+
+  _filter    = 'all';
+  _searchQ   = '';
+  _dateRange = 'all';
 
   container.innerHTML = shellHTML();
   bindListeners();
@@ -56,7 +78,12 @@ export async function mount(container) {
 }
 
 export function unmount() {
-  if (_timerState.intervalId) clearInterval(_timerState.intervalId);
+  // Keep the timer interval alive when running/paused — the notification panel
+  // will continue receiving qfl:timer-tick events while the user is on other pages.
+  // The interval callbacks are null-safe when _container is null.
+  if (_timerState.status === 'idle' && _timerState.intervalId) {
+    clearInterval(_timerState.intervalId);
+  }
   _container = null;
 }
 
@@ -489,6 +516,10 @@ function bindDetailListeners() {
 
   // Initialise timer controls
   renderTimerControls();
+  // Re-register global controls so notif-panel pause/stop buttons work from any page
+  if (_timerState.status !== 'idle') {
+    window._qflTimerControls = { pause: pauseTimer, resume: resumeTimer, stop: () => stopTimer() };
+  }
 }
 
 /* ── Milestones ─────────────────────────────────────────────────────────── */
@@ -904,13 +935,18 @@ function renderTimerControls() {
 function updateTimerDisplay() {
   const el = _container?.querySelector('#timer-display');
   if (el) el.textContent = formatDuration(getElapsedMs());
+  dispatchTimerEvent('qfl:timer-tick');
 }
 
 function startTimer() {
+  const project = _projects.find(p => p.id === _currentProjectId);
+  _timerProjectName     = project?.name ?? 'Project';
   _timerState.status    = 'running';
   _timerState.startedAt = new Date();
   _timerState.intervalId = setInterval(updateTimerDisplay, 1000);
   renderTimerControls();
+  window._qflTimerControls = { pause: pauseTimer, resume: resumeTimer, stop: () => stopTimer() };
+  dispatchTimerEvent('qfl:timer-updated');
   toast('Timer started.', 'info');
 }
 
@@ -921,6 +957,7 @@ function pauseTimer() {
   clearInterval(_timerState.intervalId);
   _timerState.intervalId = null;
   renderTimerControls();
+  dispatchTimerEvent('qfl:timer-updated');
 }
 
 function resumeTimer() {
@@ -928,6 +965,7 @@ function resumeTimer() {
   _timerState.startedAt = new Date();
   _timerState.intervalId = setInterval(updateTimerDisplay, 1000);
   renderTimerControls();
+  dispatchTimerEvent('qfl:timer-updated');
 }
 
 async function stopTimer() {
@@ -966,6 +1004,8 @@ async function stopTimer() {
   _sessions = await loadSessions(_currentProjectId);
   // Auto-expand the milestone that just received this session (remove from collapsed set)
   if (lastMilestone) _collapsedMilestones.delete(String(lastMilestone.id));
+  window._qflTimerControls = null;
+  window.dispatchEvent(new CustomEvent('qfl:timer-stopped'));
   renderTimerControls();
   renderMilestones();
   toast(`${name} saved — ${formatDurationShort(durationSeconds)}.`, 'success');
