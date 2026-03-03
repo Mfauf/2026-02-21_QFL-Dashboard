@@ -12,19 +12,21 @@
  * Client names are resolved at render time from the cached clients list.
  */
 
-import { addRecord, getAllRecords, updateRecord, deleteRecord } from '../db.js';
+import { addRecord, getAllRecords, getByIndex, updateRecord, deleteRecord } from '../db.js';
 import { toast, openModal, openConfirm }                       from '../ui.js';
 import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce } from '../utils.js';
 import { getSettings }                                         from '../settings-store.js';
 import { navigate }                                            from '../router.js';
 
 /* ── Module state ───────────────────────────────────────────────────────── */
-let _projects  = [];   // all projects from DB
-let _clients   = [];   // all clients from DB (for dropdown + name resolution)
-let _filter    = 'all';
-let _searchQ   = '';
-let _container = null;
-let _dateRange = 'all';    // 'all' | 'last-month' | 'last-year'
+let _projects          = [];   // all projects from DB
+let _clients           = [];   // all clients from DB (for dropdown + name resolution)
+let _filter            = 'all';
+let _searchQ           = '';
+let _container         = null;
+let _dateRange         = 'all';    // 'all' | 'last-month' | 'last-year'
+let _currentProjectId  = null;     // id of the project whose detail view is open
+let _milestones        = [];       // milestones for the current project
 
 /* ── Project status config ──────────────────────────────────────────────── */
 const STATUSES = [
@@ -36,10 +38,12 @@ const STATUSES = [
 
 /* ── Mount / unmount ────────────────────────────────────────────────────── */
 export async function mount(container) {
-  _container = container;
-  _filter    = 'all';
-  _searchQ   = '';
-  _dateRange = 'all';
+  _container        = container;
+  _currentProjectId = null;
+  _milestones       = [];
+  _filter           = 'all';
+  _searchQ          = '';
+  _dateRange        = 'all';
 
   container.innerHTML = shellHTML();
   bindListeners();
@@ -53,11 +57,27 @@ export function unmount() {
 /* ── Load data from DB ──────────────────────────────────────────────────── */
 async function loadProjects() {
   try {
-    // Load both in parallel
     [_projects, _clients] = await Promise.all([
       getAllRecords('projects'),
       getAllRecords('clients'),
     ]);
+
+    // If a detail view is open, re-render it; fall back to list if project was deleted
+    if (_currentProjectId !== null) {
+      const project = _projects.find(p => p.id === _currentProjectId);
+      if (project) {
+        _milestones = await loadMilestones(_currentProjectId);
+        _container.innerHTML = detailHTML(project);
+        renderMilestones();
+        bindDetailListeners();
+        return;
+      }
+      // Project was deleted — fall back to list
+      _currentProjectId = null;
+      _milestones = [];
+      _container.innerHTML = shellHTML();
+      bindListeners();
+    }
     renderStats();
     renderTable(applyFilters());
   } catch (err) {
@@ -202,6 +222,11 @@ function renderTable(projects) {
       }
     });
   });
+
+  // Row click → open detail view
+  tbody.querySelectorAll('[data-action="open"]').forEach(btn =>
+    btn.addEventListener('click', () => openDetailView(Number(btn.dataset.id)))
+  );
 }
 
 /* ── Row HTML ───────────────────────────────────────────────────────────── */
@@ -215,10 +240,13 @@ function rowHTML(p) {
   return `
     <tr class="border-b border-[var(--clr-border)] last:border-0 hover:bg-[var(--clr-surface-2)]/50 transition-colors duration-150">
 
-      <!-- Project name -->
+      <!-- Project name — click to open detail view -->
       <td class="td-cell">
-        <p class="font-medium text-[var(--clr-text)]">${escapeHtml(p.name)}</p>
-        ${p.category ? `<p class="text-xs text-[var(--clr-text-faint)] mt-0.5">${escapeHtml(p.category)}</p>` : ''}
+        <button data-action="open" data-id="${p.id}"
+                class="text-left group w-full">
+          <p class="font-medium text-[var(--clr-text)] group-hover:text-[var(--clr-primary)] transition-colors">${escapeHtml(p.name)}</p>
+          ${p.category ? `<p class="text-xs text-[var(--clr-text-faint)] mt-0.5">${escapeHtml(p.category)}</p>` : ''}
+        </button>
       </td>
 
       <!-- Client -->
@@ -285,6 +313,330 @@ function rowHTML(p) {
         </div>
       </td>
     </tr>`;
+}
+
+/* ── Detail view ────────────────────────────────────────────────────────── */
+
+async function openDetailView(id) {
+  _currentProjectId = id;
+  await loadProjects();
+}
+
+async function showListView() {
+  _currentProjectId = null;
+  _milestones       = [];
+  _container.innerHTML = shellHTML();
+  bindListeners();
+  await loadProjects();
+}
+
+function detailHTML(project) {
+  const status  = STATUSES.find(s => s.value === project.status) ?? STATUSES[0];
+  const client  = escapeHtml(clientName(project.clientId));
+  const overdue = project.endDate && project.status !== 'complete' && project.status !== 'cancelled'
+                  && new Date(project.endDate) < new Date();
+
+  return `
+    <!-- Back -->
+    <div class="mb-6">
+      <button id="btn-back-to-projects"
+              class="btn btn-ghost flex items-center gap-2 text-sm pl-0">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+        </svg>
+        Back to Projects
+      </button>
+    </div>
+
+    <!-- Project header card -->
+    <div class="card p-6 mb-6">
+      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-3 flex-wrap">
+            <h2 class="text-xl font-semibold text-[var(--clr-text)]">${escapeHtml(project.name)}</h2>
+            <span class="badge ${status.badge}">${status.label}</span>
+          </div>
+          ${project.category ? `<p class="text-sm text-[var(--clr-text-faint)] mt-1">${escapeHtml(project.category)}</p>` : ''}
+        </div>
+
+        <div class="flex items-center gap-2 shrink-0 flex-wrap">
+          <button id="btn-detail-create-invoice"
+                  class="btn btn-ghost flex items-center gap-2 text-sm"
+                  title="Create invoice for this project">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586
+                   a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            Invoice
+          </button>
+          <button id="btn-detail-edit"
+                  class="btn btn-secondary flex items-center gap-2 text-sm">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5
+                   m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+            </svg>
+            Edit
+          </button>
+          <button id="btn-detail-delete"
+                  class="btn btn-ghost flex items-center gap-2 text-sm"
+                  style="color:var(--clr-danger)">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858
+                   L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+            </svg>
+            Delete
+          </button>
+        </div>
+      </div>
+
+      <!-- Info grid -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-5 mt-6 pt-6
+                  border-t border-[var(--clr-border)]">
+        ${detailField('Client',     client || '—')}
+        ${detailField('Amount',     project.amount ? formatQAR(Number(project.amount)) : '—')}
+        ${detailField('Hours',      project.hours  ? `${Number(project.hours).toLocaleString()} hrs` : '—')}
+        ${detailField('Start Date', formatDate(project.startDate))}
+        ${detailField('Due Date',   formatDate(project.endDate), overdue ? 'var(--clr-danger)' : null)}
+        ${detailField('Added',      formatDate(project.createdAt?.slice(0, 10)))}
+      </div>
+
+      ${project.notes ? `
+        <div class="mt-5 pt-5 border-t border-[var(--clr-border)]">
+          <p class="text-xs font-semibold uppercase tracking-wider text-[var(--clr-text-muted)] mb-2">Notes</p>
+          <p class="text-sm text-[var(--clr-text-muted)] whitespace-pre-wrap">${escapeHtml(project.notes)}</p>
+        </div>` : ''}
+    </div>
+
+    <!-- Milestones card -->
+    <div class="card p-6">
+      <div class="flex items-center justify-between mb-5">
+        <div>
+          <h3 class="font-semibold text-[var(--clr-text)]">Milestones</h3>
+          <p class="text-xs text-[var(--clr-text-faint)] mt-0.5">Track deliverables and progress</p>
+        </div>
+        <button id="btn-add-milestone" class="btn btn-primary flex items-center gap-2 text-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+          </svg>
+          Add Milestone
+        </button>
+      </div>
+      <div id="milestones-list"></div>
+    </div>`;
+}
+
+function detailField(label, value, color = null) {
+  return `
+    <div>
+      <p class="text-xs font-semibold uppercase tracking-wider mb-1"
+         style="color:var(--clr-text-muted)">${label}</p>
+      <p class="text-sm font-medium"
+         style="color:${color ?? 'var(--clr-text)'}">${value}</p>
+    </div>`;
+}
+
+function bindDetailListeners() {
+  _container.querySelector('#btn-back-to-projects')
+    ?.addEventListener('click', () => showListView());
+
+  _container.querySelector('#btn-add-milestone')
+    ?.addEventListener('click', () => openAddMilestoneModal());
+
+  _container.querySelector('#btn-detail-edit')
+    ?.addEventListener('click', () => openEditModal(_currentProjectId));
+
+  _container.querySelector('#btn-detail-delete')?.addEventListener('click', () => {
+    const p = _projects.find(x => x.id === _currentProjectId);
+    if (p) confirmDelete(_currentProjectId, p.name);
+  });
+
+  _container.querySelector('#btn-detail-create-invoice')?.addEventListener('click', () => {
+    const p = _projects.find(x => x.id === _currentProjectId);
+    if (!p) return;
+    sessionStorage.setItem('qfl_invoice_prefill', JSON.stringify({
+      clientId:  p.clientId ?? null,
+      projectId: p.id,
+      amount:    p.amount   ?? '',
+      notes:     p.notes    ?? '',
+      dueAt:     p.endDate  ?? '',
+    }));
+    navigate('invoices');
+  });
+}
+
+/* ── Milestones ─────────────────────────────────────────────────────────── */
+
+async function loadMilestones(projectId) {
+  const all = await getByIndex('milestones', 'projectId', projectId);
+  return all.sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
+}
+
+function renderMilestones() {
+  const el = _container?.querySelector('#milestones-list');
+  if (!el) return;
+
+  if (!_milestones.length) {
+    el.innerHTML = `
+      <div class="py-10 flex flex-col items-center gap-3 text-center">
+        <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+             style="color:var(--clr-surface-3)">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2
+               M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2
+               m-6 9l2 2 4-4"/>
+        </svg>
+        <p class="text-sm font-medium text-[var(--clr-text-muted)]">No milestones yet</p>
+        <p class="text-xs text-[var(--clr-text-faint)]">Add a milestone to start tracking deliverables.</p>
+      </div>`;
+    return;
+  }
+
+  const done  = _milestones.filter(m => m.completed).length;
+  const total = _milestones.length;
+  const pct   = Math.round((done / total) * 100);
+
+  el.innerHTML = `
+    <!-- Progress bar -->
+    <div class="mb-5">
+      <div class="flex justify-between text-xs mb-1.5" style="color:var(--clr-text-muted)">
+        <span>${done} of ${total} completed</span>
+        <span>${pct}%</span>
+      </div>
+      <div class="h-2 rounded-full overflow-hidden" style="background:var(--clr-border)">
+        <div class="h-2 rounded-full transition-all duration-500"
+             style="width:${pct}%; background:var(--clr-primary)"></div>
+      </div>
+    </div>
+    <!-- List -->
+    <ul class="space-y-2">
+      ${_milestones.map(m => milestoneItemHTML(m)).join('')}
+    </ul>`;
+
+  el.querySelectorAll('[data-ms-action="toggle"]').forEach(btn =>
+    btn.addEventListener('click', () => toggleMilestone(Number(btn.dataset.id)))
+  );
+  el.querySelectorAll('[data-ms-action="rename"]').forEach(btn =>
+    btn.addEventListener('click', () => openRenameMilestoneModal(Number(btn.dataset.id)))
+  );
+  el.querySelectorAll('[data-ms-action="delete"]').forEach(btn =>
+    btn.addEventListener('click', () => confirmDeleteMilestone(Number(btn.dataset.id), btn.dataset.name))
+  );
+}
+
+function milestoneItemHTML(m) {
+  const done = m.completed;
+  return `
+    <li class="flex items-center gap-3 px-3 py-3 rounded-lg border transition-colors group
+               border-[var(--clr-border)] hover:bg-[var(--clr-surface-2)]"
+        style="${done ? 'opacity:0.72' : ''}">
+      <!-- Toggle button -->
+      <button data-ms-action="toggle" data-id="${m.id}"
+              title="${done ? 'Mark incomplete' : 'Mark complete'}"
+              class="shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center
+                     transition-all"
+              style="border-color:${done ? 'var(--clr-success)' : 'var(--clr-border)'};
+                     background:${done ? 'var(--clr-success)' : 'transparent'}">
+        ${done ? `<svg class="w-3 h-3" fill="none" stroke="white" stroke-width="3" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
+        </svg>` : ''}
+      </button>
+      <!-- Name -->
+      <span class="flex-1 text-sm ${done ? 'line-through' : ''}"
+            style="color:${done ? 'var(--clr-text-muted)' : 'var(--clr-text)'}">${escapeHtml(m.name)}</span>
+      <!-- Actions (reveal on hover) -->
+      <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+        <button data-ms-action="rename" data-id="${m.id}" data-name="${escapeHtml(m.name)}"
+                class="btn btn-icon" title="Rename milestone">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5
+                 m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+          </svg>
+        </button>
+        <button data-ms-action="delete" data-id="${m.id}" data-name="${escapeHtml(m.name)}"
+                class="btn btn-icon" title="Delete milestone" style="color:var(--clr-danger)">
+          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858
+                 L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+          </svg>
+        </button>
+      </div>
+    </li>`;
+}
+
+function openAddMilestoneModal() {
+  openModal({
+    title:       'Add Milestone',
+    bodyHTML:    `
+      <div class="p-6">
+        <label class="form-label" for="ms-name-input">
+          Milestone Name <span style="color:var(--clr-danger)">*</span>
+        </label>
+        <input id="ms-name-input" name="msName" type="text" class="form-input"
+               placeholder="e.g. Design mockups approved" autocomplete="off" required/>
+      </div>`,
+    submitLabel: 'Add Milestone',
+    onSubmit: async (fd) => {
+      const name = fd.get('msName')?.trim();
+      if (!name) throw new Error('Milestone name is required');
+      await addRecord('milestones', { projectId: _currentProjectId, name, completed: false });
+      _milestones = await loadMilestones(_currentProjectId);
+      renderMilestones();
+      toast('Milestone added.', 'success');
+    },
+  });
+}
+
+function openRenameMilestoneModal(id) {
+  const m = _milestones.find(x => x.id === id);
+  if (!m) return;
+  openModal({
+    title:       'Rename Milestone',
+    bodyHTML:    `
+      <div class="p-6">
+        <label class="form-label" for="ms-rename-input">Milestone Name</label>
+        <input id="ms-rename-input" name="msName" type="text" class="form-input"
+               value="${escapeHtml(m.name)}" autocomplete="off" required/>
+      </div>`,
+    submitLabel: 'Save',
+    onSubmit: async (fd) => {
+      const name = fd.get('msName')?.trim();
+      if (!name) throw new Error('Milestone name is required');
+      await updateRecord('milestones', id, { name });
+      const idx = _milestones.findIndex(x => x.id === id);
+      if (idx !== -1) _milestones[idx] = { ..._milestones[idx], name };
+      renderMilestones();
+      toast('Milestone renamed.', 'success');
+    },
+  });
+}
+
+function confirmDeleteMilestone(id, name) {
+  openConfirm({
+    title:        'Delete Milestone',
+    message:      `Delete "${name}"? This cannot be undone.`,
+    confirmLabel: 'Delete',
+    onConfirm: async () => {
+      await deleteRecord('milestones', id);
+      _milestones = _milestones.filter(m => m.id !== id);
+      renderMilestones();
+      toast('Milestone deleted.', 'info');
+    },
+  });
+}
+
+async function toggleMilestone(id) {
+  const m = _milestones.find(x => x.id === id);
+  if (!m) return;
+  const completed = !m.completed;
+  await updateRecord('milestones', id, { completed });
+  const idx = _milestones.findIndex(x => x.id === id);
+  if (idx !== -1) _milestones[idx] = { ..._milestones[idx], completed };
+  renderMilestones();
 }
 
 /* ── Form HTML (shared by add + edit) ───────────────────────────────────── */

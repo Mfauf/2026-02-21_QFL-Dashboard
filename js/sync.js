@@ -29,7 +29,7 @@
 import { getAllRecords, clearStore, bulkPutRecords, getMetaValue, setMetaValue } from './db.js';
 import { getSettings, saveSettings } from './settings-store.js';
 
-const STORES = ['clients', 'projects', 'transactions', 'invoices'];
+const STORES = ['clients', 'projects', 'transactions', 'invoices', 'milestones'];
 
 /* ── Module-level singletons ────────────────────────────────────────────── */
 let _peer = null;
@@ -61,11 +61,13 @@ async function exportAll() {
   const results = await Promise.all(STORES.map(s => getAllRecords(s)));
   const data = Object.fromEntries(STORES.map((s, i) => [s, results[i]]));
 
-  // Include settings, but strip the device-specific peerUID
+  // Include settings, stripping anything too large or device-specific
   const settings = getSettings();
+  const { avatar: _avatar, ...profileWithoutAvatar } = settings.profile ?? {};
   const settingsToSync = {
     ...settings,
-    sync: { peerUID: '' },   // stripped — each device keeps its own
+    profile: profileWithoutAvatar,   // avatar omitted — base64 is too large for P2P channel
+    sync: { peerUID: '' },           // stripped — each device keeps its own
   };
   data._settings = settingsToSync;
 
@@ -105,6 +107,7 @@ async function applyMerge(incoming) {
     const localSettings = getSettings();
     saveSettings({
       ...incoming._settings,
+      profile:    { ...incoming._settings.profile, avatar: localSettings.profile?.avatar }, // keep local avatar
       appearance: localSettings.appearance,  // keep local theme pref
       sync:       localSettings.sync,        // keep local peerUID
     });
