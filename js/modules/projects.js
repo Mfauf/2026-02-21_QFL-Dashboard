@@ -232,9 +232,12 @@ function renderTable(projects) {
     });
   });
 
-  // Row click → open detail view
-  tbody.querySelectorAll('[data-action="open"]').forEach(btn =>
-    btn.addEventListener('click', () => openDetailView(Number(btn.dataset.id)))
+  // Whole-row click → open detail view (skip clicks on action buttons)
+  tbody.querySelectorAll('tr[data-project-id]').forEach(tr =>
+    tr.addEventListener('click', e => {
+      if (e.target.closest('[data-action]')) return;
+      openDetailView(Number(tr.dataset.projectId));
+    })
   );
 }
 
@@ -248,16 +251,16 @@ function rowHTML(p) {
 
   return `
     <tr class="border-b border-[var(--clr-border)] last:border-0 transition-colors duration-150 cursor-pointer group"
+        data-project-id="${p.id}"
         onmouseenter="this.style.background='var(--clr-surface-2)';this.style.boxShadow='inset 3px 0 0 var(--clr-primary)'"
         onmouseleave="this.style.background='';this.style.boxShadow=''">
 
-      <!-- Project name — click to open detail view -->
+      <!-- Project name -->
       <td class="td-cell">
-        <button data-action="open" data-id="${p.id}"
-                class="text-left w-full">
+        <div>
           <p class="font-medium transition-colors duration-150 group-hover:text-[var(--clr-primary)]">${escapeHtml(p.name)}</p>
           ${p.category ? `<p class="text-xs mt-0.5 transition-colors duration-150" style="color:var(--clr-text-faint)">${escapeHtml(p.category)}</p>` : ''}
-        </button>
+        </div>
       </td>
 
       <!-- Client -->
@@ -586,17 +589,31 @@ function renderMilestones() {
   el.innerHTML = `${timeBarHTML}${milestoneProgressHTML}<div style="display:flex;flex-direction:column;gap:6px">${timelineHTML}</div>`;
 
   el.querySelectorAll('[data-ms-action="toggle"]').forEach(btn =>
-    btn.addEventListener('click', () => toggleMilestone(Number(btn.dataset.id)))
+    btn.addEventListener('click', e => { e.stopPropagation(); toggleMilestone(Number(btn.dataset.id)); })
   );
   el.querySelectorAll('[data-ms-action="rename"]').forEach(btn =>
-    btn.addEventListener('click', () => openRenameMilestoneModal(Number(btn.dataset.id)))
+    btn.addEventListener('click', e => { e.stopPropagation(); openRenameMilestoneModal(Number(btn.dataset.id)); })
   );
   el.querySelectorAll('[data-ms-action="delete"]').forEach(btn =>
-    btn.addEventListener('click', () => confirmDeleteMilestone(Number(btn.dataset.id), btn.dataset.name))
+    btn.addEventListener('click', e => { e.stopPropagation(); confirmDeleteMilestone(Number(btn.dataset.id), btn.dataset.name); })
   );
   el.querySelectorAll('[data-sess-action="delete"]').forEach(btn =>
     btn.addEventListener('click', () => confirmDeleteSession(Number(btn.dataset.id), btn.dataset.name))
   );
+  // Milestone row collapse / expand
+  el.querySelectorAll('[data-ms-action="collapse"]').forEach(header => {
+    header.addEventListener('click', e => {
+      // Don't collapse when clicking toggle/rename/delete inside the header
+      if (e.target.closest('[data-ms-action="toggle"],[data-ms-action="rename"],[data-ms-action="delete"]')) return;
+      const id      = header.dataset.id;
+      const pane    = el.querySelector(`[data-ms-sessions="${id}"]`);
+      const chevron = el.querySelector(`[data-chevron="${id}"]`);
+      if (!pane) return;
+      const isHidden = pane.style.display === 'none';
+      pane.style.display   = isHidden ? '' : 'none';
+      if (chevron) chevron.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
+    });
+  });
 }
 
 function sessionGroupHTML(title, sessions) {
@@ -612,6 +629,7 @@ function sessionGroupHTML(title, sessions) {
 /** Milestone as a block with its sessions indented beneath it */
 function milestoneBlockHTML(m, sessions) {
   const done        = m.completed;
+  const hasSessions = sessions.length > 0;
   const toggleStyle = done
     ? 'width:18px;height:18px;border-radius:9999px;border:2px solid var(--clr-success);background:var(--clr-success);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;transition:all 150ms ease'
     : 'width:18px;height:18px;border-radius:9999px;border:2px solid var(--clr-text-faint);background:transparent;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;transition:all 150ms ease';
@@ -624,7 +642,8 @@ function milestoneBlockHTML(m, sessions) {
       <!-- Milestone row -->
       <div class="group" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;
                                 background:${bgColor};border:1px solid ${borderColor};
-                                ${done ? 'opacity:0.75' : ''}">
+                                ${hasSessions ? 'cursor:pointer;' : ''}${done ? 'opacity:0.75' : ''}"
+           ${hasSessions ? `data-ms-action="collapse" data-id="${m.id}"` : ''}>
         <button data-ms-action="toggle" data-id="${m.id}"
                 title="${done ? 'Mark incomplete' : 'Mark complete'}"
                 style="${toggleStyle}">
@@ -633,7 +652,7 @@ function milestoneBlockHTML(m, sessions) {
         <!-- Flag icon -->
         <svg style="width:13px;height:13px;flex-shrink:0;color:${accentColor}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/></svg>
         <span style="flex:1;font-size:0.875rem;font-weight:600;${done ? 'text-decoration:line-through;color:var(--clr-text-muted)' : 'color:var(--clr-text)'}">${escapeHtml(m.name)}</span>
-        ${sessions.length ? `<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:9999px;background:var(--clr-primary-dim);color:var(--clr-primary-light)">${sessions.length} session${sessions.length > 1 ? 's' : ''}</span>` : ''}
+        ${hasSessions ? `<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:9999px;background:var(--clr-primary-dim);color:var(--clr-primary-light)">${sessions.length} session${sessions.length > 1 ? 's' : ''}</span>` : ''}
         <div style="display:flex;align-items:center;gap:2px;opacity:0.3;transition:opacity 150ms ease"
              onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.3'">
           <button data-ms-action="rename" data-id="${m.id}" data-name="${escapeHtml(m.name)}"
@@ -645,9 +664,15 @@ function milestoneBlockHTML(m, sessions) {
             <svg style="width:13px;height:13px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6m4-6v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
           </button>
         </div>
+        ${hasSessions ? `
+          <svg data-chevron="${m.id}" style="width:14px;height:14px;flex-shrink:0;color:var(--clr-text-faint);transition:transform 200ms ease"
+               fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>` : ''}
       </div>
-      ${sessions.length ? `
-        <div style="margin-left:28px;margin-top:2px;display:flex;flex-direction:column;gap:2px;
+      ${hasSessions ? `
+        <div data-ms-sessions="${m.id}"
+             style="margin-left:28px;margin-top:2px;display:flex;flex-direction:column;gap:2px;
                     border-left:2px solid ${accentColor}33;padding-left:12px;padding-bottom:4px">
           ${sessions.map(s => sessionItemHTML(s)).join('')}
         </div>` : ''}
