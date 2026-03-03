@@ -9,10 +9,11 @@
  *  projects     { id, name, clientId, category, startDate, endDate, amount, hours, status, notes, createdAt }
  *  transactions { id, type('income'|'outcome'), projectId?, clientId?, category, amount, date, note, createdAt }
  *  invoices     { id, clientId, projectId?, number, amount, issuedAt, dueAt, status, notes, createdAt }
+ *  milestones   { id, projectId, name, completed, createdAt }
  */
 
 const DB_NAME    = 'QFLDashboard';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 /** @type {IDBDatabase|null} */
 let _db = null;
@@ -58,6 +59,12 @@ export function openDB() {
       // v2: key-value meta store (device UID, etc.)
       if (!db.objectStoreNames.contains('meta')) {
         db.createObjectStore('meta', { keyPath: 'key' });
+      }
+
+      // v3: project milestones
+      if (!db.objectStoreNames.contains('milestones')) {
+        const ms = db.createObjectStore('milestones', { keyPath: 'id', autoIncrement: true });
+        ms.createIndex('projectId', 'projectId', { unique: false });
       }
     };
 

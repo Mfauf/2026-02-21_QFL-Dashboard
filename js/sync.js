@@ -29,7 +29,7 @@
 import { getAllRecords, clearStore, bulkPutRecords, getMetaValue, setMetaValue } from './db.js';
 import { getSettings, saveSettings } from './settings-store.js';
 
-const STORES = ['clients', 'projects', 'transactions', 'invoices'];
+const STORES = ['clients', 'projects', 'transactions', 'invoices', 'milestones'];
 
 /* ── Module-level singletons ────────────────────────────────────────────── */
 let _peer = null;
