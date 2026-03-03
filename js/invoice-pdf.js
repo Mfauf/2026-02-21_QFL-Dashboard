@@ -40,11 +40,12 @@ function esc(str) {
 
 /* ── Main export ─────────────────────────────────────────────────────────── */
 /**
- * @param {object} invoice
- * @param {object|null} client   — full client record (name, email, phone, …)
- * @param {object|null} project  — full project record (name, category, notes, …)
+ * @param {object}       invoice
+ * @param {object|null}  client     — full client record (name, email, phone, …)
+ * @param {object|null}  project    — full project record (name, category, notes, …)
+ * @param {object[]}     lineItems  — optional blueprint features [{name,details,price}]
  */
-export function printInvoice(invoice, client, project) {
+export function printInvoice(invoice, client, project, lineItems = []) {
   const clientName  = client?.name  ?? '—';
   const projectName = project?.name ?? null;
   const s       = getSettings();
@@ -251,16 +252,36 @@ export function printInvoice(invoice, client, project) {
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td style="padding:1.1rem 1.25rem;font-size:.9375rem;color:#1e293b;border-bottom:1px solid #f1f5f9;">
-            ${descriptionHTML}
-          </td>
-          <td style="padding:1.1rem 1.25rem;text-align:right;font-size:.9375rem;
-                     font-weight:600;color:#1e293b;border-bottom:1px solid #f1f5f9;
-                     font-variant-numeric:tabular-nums;white-space:nowrap;">
-            ${invoice.amount ? esc(formatQAR(Number(invoice.amount))) : '—'}
-          </td>
-        </tr>
+        ${lineItems.length
+          ? lineItems.map((f, i) => {
+              const last = i === lineItems.length - 1;
+              return `<tr>
+                <td style="padding:1rem 1.25rem;font-size:.9375rem;color:#1e293b;
+                           border-bottom:${last ? 'none' : '1px solid #f1f5f9'};">
+                  <span style="font-weight:500;">${esc(f.name)}</span>
+                  ${f.details
+                    ? `<span style="display:block;font-size:.8125rem;color:#64748b;margin-top:.2rem;">${esc(f.details)}</span>`
+                    : ''}
+                </td>
+                <td style="padding:1rem 1.25rem;text-align:right;font-size:.9375rem;
+                           font-weight:600;color:#1e293b;
+                           border-bottom:${last ? 'none' : '1px solid #f1f5f9'};
+                           font-variant-numeric:tabular-nums;white-space:nowrap;">
+                  ${f.price ? esc(formatQAR(Number(f.price))) : '—'}
+                </td>
+              </tr>`;
+            }).join('')
+          : `<tr>
+              <td style="padding:1.1rem 1.25rem;font-size:.9375rem;color:#1e293b;border-bottom:1px solid #f1f5f9;">
+                ${descriptionHTML}
+              </td>
+              <td style="padding:1.1rem 1.25rem;text-align:right;font-size:.9375rem;
+                         font-weight:600;color:#1e293b;border-bottom:1px solid #f1f5f9;
+                         font-variant-numeric:tabular-nums;white-space:nowrap;">
+                ${invoice.amount ? esc(formatQAR(Number(invoice.amount))) : '—'}
+              </td>
+            </tr>`
+        }
       </tbody>
     </table>
 

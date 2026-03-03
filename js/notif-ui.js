@@ -6,7 +6,8 @@
 import { getAll, unreadCount, markAllRead, clearAll, clearOne } from './notifications.js';
 
 /* ── Live timer state (not persisted, updated via window events) ─────────── */
-let _liveTimer = { status: 'idle', elapsed: 0, projectName: '' };
+// Map<projectId, { projectName, status, elapsed }>
+let _liveTimers = new Map();
 
 function formatTimerMs(ms) {
   const total = Math.floor(ms / 1000);
@@ -16,21 +17,29 @@ function formatTimerMs(ms) {
   return [h, m, s].map(n => String(n).padStart(2, '0')).join(':');
 }
 
+function _syncTimers(allTimers = []) {
+  _liveTimers.clear();
+  for (const t of allTimers) {
+    _liveTimers.set(t.projectId, { projectName: t.projectName, status: t.status, elapsed: t.elapsed });
+  }
+}
+
 function renderTimerCard() {
   const card = document.getElementById('timer-live-card');
   if (!card) return;
 
-  if (_liveTimer.status === 'idle') {
+  const active = [..._liveTimers.entries()].filter(([, t]) => t.status !== 'idle');
+  if (!active.length) {
     card.style.display = 'none';
     return;
   }
 
-  const isRunning = _liveTimer.status === 'running';
   card.style.display = 'block';
-  card.innerHTML = `
+  card.innerHTML = active.map(([pid, t]) => {
+    const isRunning = t.status === 'running';
+    return `
     <div style="margin:12px 12px 0;border-radius:12px;overflow:hidden;
                 border:1px solid var(--clr-success-ring);background:var(--clr-surface-2)">
-      <!-- Status bar -->
       <div style="display:flex;align-items:center;gap:8px;padding:8px 14px;
                   background:${isRunning ? 'var(--clr-success-bg)' : 'var(--clr-surface-3)'}">
         <span style="display:inline-block;width:8px;height:8px;border-radius:50%;flex-shrink:0;
@@ -40,24 +49,21 @@ function renderTimerCard() {
                      color:${isRunning ? 'var(--clr-success)' : 'var(--clr-text-faint)'}">
           ${isRunning ? 'Timer Running' : 'Timer Paused'}
         </span>
+        <span style="margin-left:auto;font-size:10px;color:var(--clr-text-faint);
+                     max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          ${esc(t.projectName)}
+        </span>
       </div>
-      <!-- Body -->
       <div style="padding:10px 14px 12px;display:flex;align-items:center;justify-content:space-between;gap:12px">
-        <div>
-          <p id="notif-timer-display"
-             style="font-size:1.75rem;font-weight:800;font-variant-numeric:tabular-nums;
-                    letter-spacing:-0.03em;line-height:1;
-                    color:${isRunning ? 'var(--clr-success)' : 'var(--clr-text-muted)'}">
-            ${formatTimerMs(_liveTimer.elapsed)}
-          </p>
-          <p style="font-size:11px;color:var(--clr-text-faint);margin-top:4px;
-                    max-width:140px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">
-            ${esc(_liveTimer.projectName)}
-          </p>
-        </div>
+        <p id="notif-timer-display-${pid}"
+           style="font-size:1.5rem;font-weight:800;font-variant-numeric:tabular-nums;
+                  letter-spacing:-0.03em;line-height:1;
+                  color:${isRunning ? 'var(--clr-success)' : 'var(--clr-text-muted)'}">
+          ${formatTimerMs(t.elapsed)}
+        </p>
         <div style="display:flex;gap:6px;flex-shrink:0">
           ${isRunning
-            ? `<button id="notif-timer-pause"
+            ? `<button data-action="pause" data-pid="${pid}"
                        style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;
                               padding:6px 11px;border-radius:8px;border:1px solid var(--clr-border-mid);
                               background:var(--clr-surface);color:var(--clr-text-muted);cursor:pointer">
@@ -65,7 +71,7 @@ function renderTimerCard() {
                    <rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/>
                  </svg>Pause
                </button>`
-            : `<button id="notif-timer-resume"
+            : `<button data-action="resume" data-pid="${pid}"
                        style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;
                               padding:6px 11px;border-radius:8px;border:1px solid var(--clr-success-ring);
                               background:var(--clr-success-bg);color:var(--clr-success);cursor:pointer">
@@ -73,7 +79,7 @@ function renderTimerCard() {
                    <polygon points="5 3 19 12 5 21 5 3"/>
                  </svg>Resume
                </button>`}
-          <button id="notif-timer-stop"
+          <button data-action="stop" data-pid="${pid}"
                   style="display:flex;align-items:center;gap:5px;font-size:12px;font-weight:600;
                          padding:6px 11px;border-radius:8px;border:1px solid var(--clr-danger-ring);
                          background:var(--clr-danger-bg);color:var(--clr-danger);cursor:pointer">
@@ -84,23 +90,29 @@ function renderTimerCard() {
         </div>
       </div>
     </div>`;
+  }).join('');
 
-  card.querySelector('#notif-timer-pause')?.addEventListener('click', () => {
-    window._qflTimerControls?.pause();
-  });
-  card.querySelector('#notif-timer-resume')?.addEventListener('click', () => {
-    window._qflTimerControls?.resume();
-  });
-  card.querySelector('#notif-timer-stop')?.addEventListener('click', () => {
-    window._qflTimerControls?.stop();
+  // Add a bottom spacer
+  card.innerHTML += '<div style="height:8px"></div>';
+
+  card.querySelectorAll('[data-action]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const pid      = Number(btn.dataset.pid);
+      const controls = window._qflAllTimerControls?.get(pid);
+      if (!controls) return;
+      if (btn.dataset.action === 'pause')  controls.pause();
+      if (btn.dataset.action === 'resume') controls.resume();
+      if (btn.dataset.action === 'stop')   controls.stop();
+    });
   });
 }
 
 function updateTimerBell() {
   const btn = document.getElementById('btn-notifications');
   if (!btn) return;
-  if (_liveTimer.status !== 'idle') btn.classList.add('timer-active');
-  else                              btn.classList.remove('timer-active');
+  const anyActive = [..._liveTimers.values()].some(t => t.status !== 'idle');
+  if (anyActive) btn.classList.add('timer-active');
+  else           btn.classList.remove('timer-active');
 }
 
 /* ── Icon SVG per notification type ─────────────────────────────────────── */
@@ -288,30 +300,26 @@ export function initNotifications() {
   });
 
   // ── Live timer events ───────────────────────────────────────────────────
-  // Full state change (start / pause / resume): re-render card + update bell
+  // Full state change (start / pause / resume / stop): re-render all cards + bell
   window.addEventListener('qfl:timer-updated', e => {
-    _liveTimer = {
-      status:      e.detail.status,
-      elapsed:     e.detail.elapsed,
-      projectName: e.detail.projectName,
-    };
+    _syncTimers(e.detail?.allTimers ?? []);
     renderTimerCard();
     updateTimerBell();
   });
 
-  // Every-second tick while running: just update the time display text
+  // Every-second tick while running: just update each timer's display text
   window.addEventListener('qfl:timer-tick', e => {
-    _liveTimer.elapsed = e.detail.elapsed;
-    _liveTimer.status  = e.detail.status;
-    const display = document.getElementById('notif-timer-display');
-    if (display) {
-      display.textContent = formatTimerMs(_liveTimer.elapsed);
+    const all = e.detail?.allTimers ?? [];
+    for (const t of all) {
+      _liveTimers.set(t.projectId, { ..._liveTimers.get(t.projectId), elapsed: t.elapsed, status: t.status });
+      const el = document.getElementById(`notif-timer-display-${t.projectId}`);
+      if (el) el.textContent = formatTimerMs(t.elapsed);
     }
   });
 
-  // Timer stopped: hide card, remove bell ring
-  window.addEventListener('qfl:timer-stopped', () => {
-    _liveTimer = { status: 'idle', elapsed: 0, projectName: '' };
+  // Timer stopped: sync remaining active timers, refresh card + bell
+  window.addEventListener('qfl:timer-stopped', e => {
+    _syncTimers(e.detail?.allTimers ?? []);
     renderTimerCard();
     updateTimerBell();
   });
