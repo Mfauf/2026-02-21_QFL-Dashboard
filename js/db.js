@@ -10,10 +10,11 @@
  *  transactions { id, type('income'|'outcome'), projectId?, clientId?, category, amount, date, note, createdAt }
  *  invoices     { id, clientId, projectId?, number, amount, issuedAt, dueAt, status, notes, createdAt }
  *  milestones   { id, projectId, name, completed, createdAt }
+ *  sessions     { id, projectId, milestoneId|null, name, durationSeconds, startedAt, endedAt, createdAt }
  */
 
 const DB_NAME    = 'QFLDashboard';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 
 /** @type {IDBDatabase|null} */
 let _db = null;
@@ -65,6 +66,13 @@ export function openDB() {
       if (!db.objectStoreNames.contains('milestones')) {
         const ms = db.createObjectStore('milestones', { keyPath: 'id', autoIncrement: true });
         ms.createIndex('projectId', 'projectId', { unique: false });
+      }
+
+      // v4: time-tracking sessions
+      if (!db.objectStoreNames.contains('sessions')) {
+        const ss = db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
+        ss.createIndex('projectId',   'projectId',   { unique: false });
+        ss.createIndex('milestoneId', 'milestoneId', { unique: false });
       }
     };
 

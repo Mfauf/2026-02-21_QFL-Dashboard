@@ -27,6 +27,8 @@ let _container         = null;
 let _dateRange         = 'all';    // 'all' | 'last-month' | 'last-year'
 let _currentProjectId  = null;     // id of the project whose detail view is open
 let _milestones        = [];       // milestones for the current project
+let _sessions          = [];       // time-tracking sessions for the current project
+let _timerState        = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
 
 /* ── Project status config ──────────────────────────────────────────────── */
 const STATUSES = [
@@ -41,6 +43,8 @@ export async function mount(container) {
   _container        = container;
   _currentProjectId = null;
   _milestones       = [];
+  _sessions         = [];
+  _timerState       = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
   _filter           = 'all';
   _searchQ          = '';
   _dateRange        = 'all';
@@ -51,6 +55,7 @@ export async function mount(container) {
 }
 
 export function unmount() {
+  if (_timerState.intervalId) clearInterval(_timerState.intervalId);
   _container = null;
 }
 
@@ -67,6 +72,7 @@ async function loadProjects() {
       const project = _projects.find(p => p.id === _currentProjectId);
       if (project) {
         _milestones = await loadMilestones(_currentProjectId);
+        _sessions   = await loadSessions(_currentProjectId);
         _container.innerHTML = detailHTML(project);
         renderMilestones();
         bindDetailListeners();
@@ -75,6 +81,9 @@ async function loadProjects() {
       // Project was deleted — fall back to list
       _currentProjectId = null;
       _milestones = [];
+      _sessions   = [];
+      if (_timerState.intervalId) clearInterval(_timerState.intervalId);
+      _timerState = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
       _container.innerHTML = shellHTML();
       bindListeners();
     }
@@ -325,8 +334,11 @@ async function openDetailView(id) {
 }
 
 async function showListView() {
+  if (_timerState.intervalId) clearInterval(_timerState.intervalId);
+  _timerState = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
   _currentProjectId = null;
   _milestones       = [];
+  _sessions         = [];
   _container.innerHTML = shellHTML();
   bindListeners();
   await loadProjects();
@@ -412,19 +424,20 @@ function detailHTML(project) {
         </div>` : ''}
     </div>
 
-    <!-- Milestones card -->
+    <!-- Milestones & Time card -->
     <div class="card p-6">
-      <div class="flex items-center justify-between mb-5">
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-5">
         <div>
-          <h3 class="font-semibold text-[var(--clr-text)]">Milestones</h3>
-          <p class="text-xs text-[var(--clr-text-faint)] mt-0.5">Track deliverables and progress</p>
+          <h3 class="font-semibold text-[var(--clr-text)]">Milestones &amp; Time</h3>
+          <p class="text-xs text-[var(--clr-text-faint)] mt-0.5">Track deliverables and time spent</p>
         </div>
-        <button id="btn-add-milestone" class="btn btn-primary flex items-center gap-2 text-sm">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
-          </svg>
-          Add Milestone
-        </button>
+        <div class="flex items-center gap-2 flex-wrap">
+          <div id="timer-controls"></div>
+          <button id="btn-add-milestone" class="btn btn-primary flex items-center gap-2 text-sm">
+            <svg style="width:14px;height:14px" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/></svg>
+            Add Milestone
+          </button>
+        </div>
       </div>
       <div id="milestones-list"></div>
     </div>`;
@@ -468,6 +481,9 @@ function bindDetailListeners() {
     }));
     navigate('invoices');
   });
+
+  // Initialise timer controls
+  renderTimerControls();
 }
 
 /* ── Milestones ─────────────────────────────────────────────────────────── */
@@ -481,19 +497,50 @@ function renderMilestones() {
   const el = _container?.querySelector('#milestones-list');
   if (!el) return;
 
+  const totalTrackedSec = _sessions.reduce((sum, s) => sum + (s.durationSeconds ?? 0), 0);
+  const budgetProject   = _projects.find(p => p.id === _currentProjectId);
+  const budgetHours     = budgetProject?.hours ? Number(budgetProject.hours) : null;
+  const trackedHours    = totalTrackedSec / 3600;
+  // Tracked-vs-budget bar (only if at least one session exists or budget is set)
+  const showTimeBar = totalTrackedSec > 0 || budgetHours;
+  const timePct = budgetHours ? Math.min(100, Math.round((trackedHours / budgetHours) * 100)) : null;
+  const timeBarColor = timePct !== null
+    ? (timePct >= 100 ? 'var(--clr-danger)' : timePct >= 80 ? 'var(--clr-warning)' : 'var(--clr-success)')
+    : 'var(--clr-primary)';
+
+  const timeBarHTML = showTimeBar ? `
+    <div class="mb-5 px-4 py-3 rounded-xl" style="background:var(--clr-surface-2);border:1px solid var(--clr-border-mid)">
+      <div class="flex justify-between items-center mb-2">
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--clr-text-faint)">Time Tracked</span>
+        <span style="font-size:13px;font-weight:700;color:var(--clr-text)">
+          ${formatDurationShort(totalTrackedSec)}
+          ${budgetHours ? `<span style="font-size:11px;font-weight:500;color:var(--clr-text-faint)"> / ${budgetHours} hrs budget</span>` : ''}
+        </span>
+      </div>
+      ${budgetHours ? `
+        <div style="height:6px;border-radius:9999px;background:var(--clr-border);overflow:hidden">
+          <div style="height:6px;border-radius:9999px;width:${timePct}%;background:${timeBarColor};transition:width 0.5s ease"></div>
+        </div>` : ''}
+    </div>` : '';
+
+  const standaloneSessions = _sessions.filter(s => s.milestoneId === null);
+
   if (!_milestones.length) {
     el.innerHTML = `
+      ${timeBarHTML}
       <div class="py-10 flex flex-col items-center gap-3 text-center">
-        <svg class="w-10 h-10" fill="none" stroke="currentColor" viewBox="0 0 24 24"
+        <svg style="width:40px;height:40px" fill="none" stroke="currentColor" viewBox="0 0 24 24"
              style="color:var(--clr-surface-3)">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
             d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2
                M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2
                m-6 9l2 2 4-4"/>
         </svg>
-        <p class="text-sm font-medium text-[var(--clr-text-muted)]">No milestones yet</p>
-        <p class="text-xs text-[var(--clr-text-faint)]">Add a milestone to start tracking deliverables.</p>
-      </div>`;
+        <p class="text-sm font-medium" style="color:var(--clr-text-muted)">No milestones yet</p>
+        <p class="text-xs" style="color:var(--clr-text-faint)">Add a milestone to start tracking deliverables.</p>
+      </div>
+      ${standaloneSessions.length ? sessionGroupHTML('Sessions', standaloneSessions) : ''}`;
+    bindSessionActions(el);
     return;
   }
 
@@ -502,7 +549,8 @@ function renderMilestones() {
   const pct   = Math.round((done / total) * 100);
 
   el.innerHTML = `
-    <!-- Progress bar -->
+    ${timeBarHTML}
+    <!-- Milestone progress bar -->
     <div class="mb-5">
       <div class="flex justify-between text-xs mb-1.5" style="color:var(--clr-text-muted)">
         <span>${done} of ${total} completed</span>
@@ -513,10 +561,19 @@ function renderMilestones() {
              style="width:${pct}%; background:var(--clr-primary)"></div>
       </div>
     </div>
-    <!-- List -->
-    <ul class="space-y-2">
-      ${_milestones.map(m => milestoneItemHTML(m)).join('')}
-    </ul>`;
+    <!-- Milestones + their sessions -->
+    <div class="space-y-1" id="ms-list-inner">
+      ${_milestones.map(m => {
+        const mSessions = _sessions.filter(s => s.milestoneId === m.id);
+        return `
+          ${milestoneItemHTML(m)}
+          ${mSessions.length ? `
+            <div class="ml-8 mb-2 space-y-1">
+              ${mSessions.map(s => sessionItemHTML(s)).join('')}
+            </div>` : ''}`;
+      }).join('')}
+    </div>
+    ${standaloneSessions.length ? `<div class="mt-4">${sessionGroupHTML('Unattached Sessions', standaloneSessions)}</div>` : ''}`;
 
   el.querySelectorAll('[data-ms-action="toggle"]').forEach(btn =>
     btn.addEventListener('click', () => toggleMilestone(Number(btn.dataset.id)))
@@ -526,6 +583,43 @@ function renderMilestones() {
   );
   el.querySelectorAll('[data-ms-action="delete"]').forEach(btn =>
     btn.addEventListener('click', () => confirmDeleteMilestone(Number(btn.dataset.id), btn.dataset.name))
+  );
+  bindSessionActions(el);
+}
+
+function sessionGroupHTML(title, sessions) {
+  return `
+    <div class="rounded-xl overflow-hidden" style="border:1px solid var(--clr-border)">
+      <div class="px-3 py-2" style="background:var(--clr-surface-2)">
+        <span style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--clr-text-faint)">${title}</span>
+      </div>
+      <div class="divide-y" style="border-color:var(--clr-border)">
+        ${sessions.map(s => sessionItemHTML(s)).join('')}
+      </div>
+    </div>`;
+}
+
+function sessionItemHTML(s) {
+  const d = new Date(s.endedAt ?? s.createdAt);
+  const dateStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  return `
+    <div class="flex items-center gap-3 px-3 py-2 group" style="background:transparent">
+      <svg style="width:13px;height:13px;flex-shrink:0;color:var(--clr-text-faint)" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2"/></svg>
+      <span style="flex:1;font-size:12px;color:var(--clr-text-muted)">${escapeHtml(s.name)}</span>
+      <span style="font-size:12px;font-weight:600;color:var(--clr-text);font-variant-numeric:tabular-nums">${formatDurationShort(s.durationSeconds)}</span>
+      <span style="font-size:11px;color:var(--clr-text-faint);white-space:nowrap">${dateStr}</span>
+      <button data-sess-action="delete" data-id="${s.id}" data-name="${escapeHtml(s.name)}"
+              class="btn btn-icon" title="Delete session"
+              style="opacity:0.3;transition:opacity 150ms ease;color:var(--clr-danger)"
+              onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.3'">
+        <svg style="width:13px;height:13px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6m4-6v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+      </button>
+    </div>`;
+}
+
+function bindSessionActions(container) {
+  container.querySelectorAll('[data-sess-action="delete"]').forEach(btn =>
+    btn.addEventListener('click', () => confirmDeleteSession(Number(btn.dataset.id), btn.dataset.name))
   );
 }
 
@@ -631,6 +725,175 @@ async function toggleMilestone(id) {
   const idx = _milestones.findIndex(x => x.id === id);
   if (idx !== -1) _milestones[idx] = { ..._milestones[idx], completed };
   renderMilestones();
+}
+
+/* ── Sessions ───────────────────────────────────────────────────────────── */
+
+async function loadSessions(projectId) {
+  const all = await getByIndex('sessions', 'projectId', projectId);
+  return all.sort((a, b) => (a.createdAt > b.createdAt ? 1 : -1));
+}
+
+function confirmDeleteSession(id, name) {
+  openConfirm({
+    title:        'Delete Session',
+    message:      `Delete "${name}"? The tracked time will be removed.`,
+    confirmLabel: 'Delete',
+    onConfirm: async () => {
+      await deleteRecord('sessions', id);
+      _sessions = _sessions.filter(s => s.id !== id);
+      renderMilestones();
+      renderTimerControls();
+      toast('Session deleted.', 'info');
+    },
+  });
+}
+
+/* ── Time helpers ───────────────────────────────────────────────────────── */
+
+/** Format milliseconds as HH:MM:SS (live timer display) */
+function formatDuration(ms) {
+  if (!ms || ms < 0) return '00:00:00';
+  const totalSec = Math.floor(ms / 1000);
+  const h   = Math.floor(totalSec / 3600);
+  const m   = Math.floor((totalSec % 3600) / 60);
+  const sec = totalSec % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(sec).padStart(2, '0')}`;
+}
+
+/** Format seconds as human-readable short string (stored sessions) */
+function formatDurationShort(seconds) {
+  if (!seconds || seconds < 1) return '0s';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  if (h > 0) return m > 0 ? `${h}h ${m}m` : `${h}h`;
+  if (m > 0) return s > 0 ? `${m}m ${s}s` : `${m}m`;
+  return `${s}s`;
+}
+
+function getElapsedMs() {
+  if (_timerState.status === 'running' && _timerState.startedAt) {
+    return _timerState.accumulatedMs + (Date.now() - _timerState.startedAt.getTime());
+  }
+  return _timerState.accumulatedMs;
+}
+
+/* ── Timer controls ─────────────────────────────────────────────────────── */
+
+function renderTimerControls() {
+  const el = _container?.querySelector('#timer-controls');
+  if (!el) return;
+  const { status } = _timerState;
+
+  if (status === 'idle') {
+    el.innerHTML = `
+      <button id="btn-timer-start" class="btn btn-ghost flex items-center gap-2 text-sm"
+              style="color:var(--clr-success);border:1px solid var(--clr-success-ring)">
+        <svg style="width:13px;height:13px" fill="currentColor" viewBox="0 0 24 24">
+          <polygon points="5 3 19 12 5 21 5 3"/>
+        </svg>
+        Start Timer
+      </button>`;
+  } else {
+    const elapsed = getElapsedMs();
+    const isPaused = status === 'paused';
+    el.innerHTML = `
+      <span id="timer-display"
+            style="font-size:0.875rem;font-weight:700;font-variant-numeric:tabular-nums;min-width:5.5rem;text-align:center;
+                   color:${isPaused ? 'var(--clr-text-muted)' : 'var(--clr-success)'}">
+        ${formatDuration(elapsed)}
+      </span>
+      ${isPaused
+        ? `<button id="btn-timer-resume" class="btn btn-ghost flex items-center gap-2 text-sm"
+                   style="color:var(--clr-success);border:1px solid var(--clr-success-ring)">
+             <svg style="width:13px;height:13px" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+             Resume
+           </button>`
+        : `<button id="btn-timer-pause" class="btn btn-ghost flex items-center gap-2 text-sm">
+             <svg style="width:13px;height:13px" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+             Pause
+           </button>`}
+      <button id="btn-timer-stop" class="btn btn-ghost flex items-center gap-2 text-sm"
+              style="color:var(--clr-danger);border:1px solid var(--clr-danger-ring)">
+        <svg style="width:13px;height:13px" fill="currentColor" viewBox="0 0 24 24">
+          <rect x="4" y="4" width="16" height="16" rx="2"/>
+        </svg>
+        Stop
+      </button>`;
+  }
+
+  el.querySelector('#btn-timer-start')?.addEventListener('click',  startTimer);
+  el.querySelector('#btn-timer-pause')?.addEventListener('click',  pauseTimer);
+  el.querySelector('#btn-timer-resume')?.addEventListener('click', resumeTimer);
+  el.querySelector('#btn-timer-stop')?.addEventListener('click',   () => stopTimer());
+}
+
+function updateTimerDisplay() {
+  const el = _container?.querySelector('#timer-display');
+  if (el) el.textContent = formatDuration(getElapsedMs());
+}
+
+function startTimer() {
+  _timerState.status    = 'running';
+  _timerState.startedAt = new Date();
+  _timerState.intervalId = setInterval(updateTimerDisplay, 1000);
+  renderTimerControls();
+  toast('Timer started.', 'info');
+}
+
+function pauseTimer() {
+  _timerState.accumulatedMs += Date.now() - _timerState.startedAt.getTime();
+  _timerState.startedAt = null;
+  _timerState.status    = 'paused';
+  clearInterval(_timerState.intervalId);
+  _timerState.intervalId = null;
+  renderTimerControls();
+}
+
+function resumeTimer() {
+  _timerState.status    = 'running';
+  _timerState.startedAt = new Date();
+  _timerState.intervalId = setInterval(updateTimerDisplay, 1000);
+  renderTimerControls();
+}
+
+async function stopTimer() {
+  const totalMs = getElapsedMs();
+  clearInterval(_timerState.intervalId);
+  _timerState = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
+
+  if (totalMs < 1000) {
+    renderTimerControls();
+    toast('Session too short to save (< 1 second).', 'info');
+    return;
+  }
+
+  const durationSeconds = Math.floor(totalMs / 1000);
+  const sessionNumber   = _sessions.length + 1;
+  const name            = `Session ${sessionNumber}`;
+
+  // Attach to the most recently created milestone, or null if none exist
+  const lastMilestone = _milestones.length
+    ? _milestones.reduce((latest, m) => (m.createdAt > latest.createdAt ? m : latest), _milestones[0])
+    : null;
+
+  const endedAt   = new Date().toISOString();
+  const startedAt = new Date(Date.now() - totalMs).toISOString();
+
+  await addRecord('sessions', {
+    projectId:       _currentProjectId,
+    milestoneId:     lastMilestone?.id ?? null,
+    name,
+    durationSeconds,
+    startedAt,
+    endedAt,
+  });
+
+  _sessions = await loadSessions(_currentProjectId);
+  renderTimerControls();
+  renderMilestones();
+  toast(`${name} saved — ${formatDurationShort(durationSeconds)}.`, 'success');
 }
 
 /* ── Form HTML (shared by add + edit) ───────────────────────────────────── */
