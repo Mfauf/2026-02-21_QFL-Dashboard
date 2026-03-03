@@ -497,14 +497,14 @@ function renderMilestones() {
   const el = _container?.querySelector('#milestones-list');
   if (!el) return;
 
+  // ── Time-tracked summary bar ────────────────────────────────────────────
   const totalTrackedSec = _sessions.reduce((sum, s) => sum + (s.durationSeconds ?? 0), 0);
   const budgetProject   = _projects.find(p => p.id === _currentProjectId);
   const budgetHours     = budgetProject?.hours ? Number(budgetProject.hours) : null;
   const trackedHours    = totalTrackedSec / 3600;
-  // Tracked-vs-budget bar (only if at least one session exists or budget is set)
-  const showTimeBar = totalTrackedSec > 0 || budgetHours;
-  const timePct = budgetHours ? Math.min(100, Math.round((trackedHours / budgetHours) * 100)) : null;
-  const timeBarColor = timePct !== null
+  const showTimeBar     = totalTrackedSec > 0 || budgetHours;
+  const timePct         = budgetHours ? Math.min(100, Math.round((trackedHours / budgetHours) * 100)) : null;
+  const timeBarColor    = timePct !== null
     ? (timePct >= 100 ? 'var(--clr-danger)' : timePct >= 80 ? 'var(--clr-warning)' : 'var(--clr-success)')
     : 'var(--clr-primary)';
 
@@ -523,57 +523,67 @@ function renderMilestones() {
         </div>` : ''}
     </div>` : '';
 
-  const standaloneSessions = _sessions.filter(s => s.milestoneId === null);
+  // ── Milestone progress summary ──────────────────────────────────────────
+  const doneMs  = _milestones.filter(m => m.completed).length;
+  const totalMs = _milestones.length;
+  const msPct   = totalMs ? Math.round((doneMs / totalMs) * 100) : 0;
+  const milestoneProgressHTML = totalMs ? `
+    <div class="mb-5">
+      <div class="flex justify-between mb-1.5" style="font-size:12px;color:var(--clr-text-muted)">
+        <span>${doneMs} of ${totalMs} milestones completed</span>
+        <span>${msPct}%</span>
+      </div>
+      <div style="height:5px;border-radius:9999px;background:var(--clr-border);overflow:hidden">
+        <div style="height:5px;border-radius:9999px;width:${msPct}%;background:var(--clr-primary);transition:width 0.5s ease"></div>
+      </div>
+    </div>` : '';
 
-  if (!_milestones.length) {
+  // ── Build chronological timeline ────────────────────────────────────────
+  // Standalone sessions (no milestone or milestone was completed at stop time)
+  const standaloneItems = _sessions
+    .filter(s => s.milestoneId === null)
+    .map(s => ({ kind: 'session', item: s, at: s.createdAt }));
+
+  // Milestone entries
+  const milestoneItems = _milestones
+    .map(m => ({ kind: 'milestone', item: m, at: m.createdAt }));
+
+  // Sessions attached to milestones, grouped
+  const sessionsByMs = {};
+  _sessions
+    .filter(s => s.milestoneId !== null)
+    .sort((a, b) => a.createdAt.localeCompare(b.createdAt))
+    .forEach(s => {
+      (sessionsByMs[s.milestoneId] ??= []).push(s);
+    });
+
+  // Flat sorted timeline
+  const timeline = [...standaloneItems, ...milestoneItems]
+    .sort((a, b) => a.at.localeCompare(b.at));
+
+  if (!timeline.length) {
     el.innerHTML = `
       ${timeBarHTML}
-      <div class="py-10 flex flex-col items-center gap-3 text-center">
-        <svg style="width:40px;height:40px" fill="none" stroke="currentColor" viewBox="0 0 24 24"
-             style="color:var(--clr-surface-3)">
+      <div style="padding:2.5rem 0;display:flex;flex-direction:column;align-items:center;gap:12px;text-align:center">
+        <svg style="width:40px;height:40px;color:var(--clr-surface-3)" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
             d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2
-               M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2
-               m-6 9l2 2 4-4"/>
+               M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2m-6 9l2 2 4-4"/>
         </svg>
-        <p class="text-sm font-medium" style="color:var(--clr-text-muted)">No milestones yet</p>
-        <p class="text-xs" style="color:var(--clr-text-faint)">Add a milestone to start tracking deliverables.</p>
-      </div>
-      ${standaloneSessions.length ? sessionGroupHTML('Sessions', standaloneSessions) : ''}`;
-    bindSessionActions(el);
+        <p style="font-size:0.875rem;font-weight:500;color:var(--clr-text-muted)">Nothing yet</p>
+        <p style="font-size:0.75rem;color:var(--clr-text-faint)">Add a milestone or start the timer to track work.</p>
+      </div>`;
     return;
   }
 
-  const done  = _milestones.filter(m => m.completed).length;
-  const total = _milestones.length;
-  const pct   = Math.round((done / total) * 100);
+  const timelineHTML = timeline.map(entry => {
+    if (entry.kind === 'milestone') {
+      return milestoneBlockHTML(entry.item, sessionsByMs[entry.item.id] ?? []);
+    }
+    return standaloneSessionHTML(entry.item);
+  }).join('');
 
-  el.innerHTML = `
-    ${timeBarHTML}
-    <!-- Milestone progress bar -->
-    <div class="mb-5">
-      <div class="flex justify-between text-xs mb-1.5" style="color:var(--clr-text-muted)">
-        <span>${done} of ${total} completed</span>
-        <span>${pct}%</span>
-      </div>
-      <div class="h-2 rounded-full overflow-hidden" style="background:var(--clr-border)">
-        <div class="h-2 rounded-full transition-all duration-500"
-             style="width:${pct}%; background:var(--clr-primary)"></div>
-      </div>
-    </div>
-    <!-- Milestones + their sessions -->
-    <div class="space-y-1" id="ms-list-inner">
-      ${_milestones.map(m => {
-        const mSessions = _sessions.filter(s => s.milestoneId === m.id);
-        return `
-          ${milestoneItemHTML(m)}
-          ${mSessions.length ? `
-            <div class="ml-8 mb-2 space-y-1">
-              ${mSessions.map(s => sessionItemHTML(s)).join('')}
-            </div>` : ''}`;
-      }).join('')}
-    </div>
-    ${standaloneSessions.length ? `<div class="mt-4">${sessionGroupHTML('Unattached Sessions', standaloneSessions)}</div>` : ''}`;
+  el.innerHTML = `${timeBarHTML}${milestoneProgressHTML}<div style="display:flex;flex-direction:column;gap:6px">${timelineHTML}</div>`;
 
   el.querySelectorAll('[data-ms-action="toggle"]').forEach(btn =>
     btn.addEventListener('click', () => toggleMilestone(Number(btn.dataset.id)))
@@ -584,35 +594,89 @@ function renderMilestones() {
   el.querySelectorAll('[data-ms-action="delete"]').forEach(btn =>
     btn.addEventListener('click', () => confirmDeleteMilestone(Number(btn.dataset.id), btn.dataset.name))
   );
-  bindSessionActions(el);
+  el.querySelectorAll('[data-sess-action="delete"]').forEach(btn =>
+    btn.addEventListener('click', () => confirmDeleteSession(Number(btn.dataset.id), btn.dataset.name))
+  );
 }
 
 function sessionGroupHTML(title, sessions) {
   return `
-    <div class="rounded-xl overflow-hidden" style="border:1px solid var(--clr-border)">
-      <div class="px-3 py-2" style="background:var(--clr-surface-2)">
+    <div style="border-radius:10px;overflow:hidden;border:1px solid var(--clr-border)">
+      <div style="padding:6px 12px;background:var(--clr-surface-2)">
         <span style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;color:var(--clr-text-faint)">${title}</span>
       </div>
-      <div class="divide-y" style="border-color:var(--clr-border)">
-        ${sessions.map(s => sessionItemHTML(s)).join('')}
-      </div>
+      <div>${sessions.map(s => sessionItemHTML(s)).join('')}</div>
     </div>`;
 }
 
-function sessionItemHTML(s) {
-  const d = new Date(s.endedAt ?? s.createdAt);
-  const dateStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+/** Milestone as a block with its sessions indented beneath it */
+function milestoneBlockHTML(m, sessions) {
+  const done        = m.completed;
+  const toggleStyle = done
+    ? 'width:18px;height:18px;border-radius:9999px;border:2px solid var(--clr-success);background:var(--clr-success);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;transition:all 150ms ease'
+    : 'width:18px;height:18px;border-radius:9999px;border:2px solid var(--clr-text-faint);background:transparent;display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;transition:all 150ms ease';
+  const bgColor     = done ? 'var(--clr-surface)' : 'var(--clr-surface-2)';
+  const borderColor = done ? 'var(--clr-border)'  : 'var(--clr-border-mid)';
+  const accentColor = done ? 'var(--clr-success)'  : 'var(--clr-primary)';
+
   return `
-    <div class="flex items-center gap-3 px-3 py-2 group" style="background:transparent">
+    <div>
+      <!-- Milestone row -->
+      <div class="group" style="display:flex;align-items:center;gap:10px;padding:10px 14px;border-radius:10px;
+                                background:${bgColor};border:1px solid ${borderColor};
+                                ${done ? 'opacity:0.75' : ''}">
+        <button data-ms-action="toggle" data-id="${m.id}"
+                title="${done ? 'Mark incomplete' : 'Mark complete'}"
+                style="${toggleStyle}">
+          ${done ? `<svg style="width:10px;height:10px" fill="none" stroke="white" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>` : ''}
+        </button>
+        <!-- Flag icon -->
+        <svg style="width:13px;height:13px;flex-shrink:0;color:${accentColor}" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1zM4 22v-7"/></svg>
+        <span style="flex:1;font-size:0.875rem;font-weight:600;${done ? 'text-decoration:line-through;color:var(--clr-text-muted)' : 'color:var(--clr-text)'}">${escapeHtml(m.name)}</span>
+        ${sessions.length ? `<span style="font-size:11px;font-weight:600;padding:2px 8px;border-radius:9999px;background:var(--clr-primary-dim);color:var(--clr-primary-light)">${sessions.length} session${sessions.length > 1 ? 's' : ''}</span>` : ''}
+        <div style="display:flex;align-items:center;gap:2px;opacity:0.3;transition:opacity 150ms ease"
+             onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.3'">
+          <button data-ms-action="rename" data-id="${m.id}" data-name="${escapeHtml(m.name)}"
+                  class="btn btn-icon" title="Rename">
+            <svg style="width:13px;height:13px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5"/><path d="M17.586 3.586a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+          </button>
+          <button data-ms-action="delete" data-id="${m.id}" data-name="${escapeHtml(m.name)}"
+                  class="btn btn-icon" title="Delete" style="color:var(--clr-danger)">
+            <svg style="width:13px;height:13px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6m4-6v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+          </button>
+        </div>
+      </div>
+      ${sessions.length ? `
+        <div style="margin-left:28px;margin-top:2px;display:flex;flex-direction:column;gap:2px;
+                    border-left:2px solid ${accentColor}33;padding-left:12px;padding-bottom:4px">
+          ${sessions.map(s => sessionItemHTML(s)).join('')}
+        </div>` : ''}
+    </div>`;
+}
+
+/** Standalone session (no milestone or milestone was completed at stop-time) */
+function standaloneSessionHTML(s) {
+  return sessionItemHTML(s, true);
+}
+
+function sessionItemHTML(s, standalone = false) {
+  const d       = new Date(s.endedAt ?? s.createdAt);
+  const dateStr = d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const bg      = standalone ? 'var(--clr-surface-2)' : 'transparent';
+  const border  = standalone ? '1px solid var(--clr-border)' : 'none';
+  const radius  = standalone ? '8px' : '6px';
+  return `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 12px;
+               background:${bg};border:${border};border-radius:${radius}">
       <svg style="width:13px;height:13px;flex-shrink:0;color:var(--clr-text-faint)" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path stroke-linecap="round" stroke-linejoin="round" d="M12 6v6l4 2"/></svg>
       <span style="flex:1;font-size:12px;color:var(--clr-text-muted)">${escapeHtml(s.name)}</span>
-      <span style="font-size:12px;font-weight:600;color:var(--clr-text);font-variant-numeric:tabular-nums">${formatDurationShort(s.durationSeconds)}</span>
+      <span style="font-size:12px;font-weight:700;color:var(--clr-text);font-variant-numeric:tabular-nums">${formatDurationShort(s.durationSeconds)}</span>
       <span style="font-size:11px;color:var(--clr-text-faint);white-space:nowrap">${dateStr}</span>
       <button data-sess-action="delete" data-id="${s.id}" data-name="${escapeHtml(s.name)}"
               class="btn btn-icon" title="Delete session"
-              style="opacity:0.3;transition:opacity 150ms ease;color:var(--clr-danger)"
-              onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.3'">
-        <svg style="width:13px;height:13px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6m4-6v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
+              style="opacity:0.25;transition:opacity 150ms ease;color:var(--clr-danger)"
+              onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.25'">
+        <svg style="width:12px;height:12px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6m4-6v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
       </button>
     </div>`;
 }
@@ -621,39 +685,6 @@ function bindSessionActions(container) {
   container.querySelectorAll('[data-sess-action="delete"]').forEach(btn =>
     btn.addEventListener('click', () => confirmDeleteSession(Number(btn.dataset.id), btn.dataset.name))
   );
-}
-
-function milestoneItemHTML(m) {
-  const done = m.completed;
-  // Toggle styles — fully inline so they never depend on a Tailwind build scan
-  const toggleStyle = done
-    ? 'width:20px;height:20px;border-radius:9999px;border:2px solid var(--clr-success);background:var(--clr-success);display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;transition:all 150ms ease'
-    : 'width:20px;height:20px;border-radius:9999px;border:2px solid var(--clr-text-faint);background:transparent;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;transition:all 150ms ease';
-
-  return `
-    <li class="flex items-center gap-3 px-3 py-3 rounded-lg border transition-colors group"
-        style="border-color:var(--clr-border-mid);${done ? 'opacity:0.75' : ''}">
-      <!-- Toggle button -->
-      <button data-ms-action="toggle" data-id="${m.id}"
-              title="${done ? 'Mark incomplete' : 'Mark complete'}"
-              style="${toggleStyle}">
-        ${done ? `<svg style="width:11px;height:11px" fill="none" stroke="white" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>` : ''}
-      </button>
-      <!-- Name -->
-      <span class="flex-1 text-sm" style="${done ? 'text-decoration:line-through;color:var(--clr-text-muted)' : 'color:var(--clr-text)'}">${escapeHtml(m.name)}</span>
-      <!-- Actions (always visible, dimmed until hover) -->
-      <div class="flex items-center gap-1" style="opacity:0.35;transition:opacity 150ms ease"
-           onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.35'">
-        <button data-ms-action="rename" data-id="${m.id}" data-name="${escapeHtml(m.name)}"
-                class="btn btn-icon" title="Rename milestone">
-          <svg style="width:14px;height:14px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5"/><path d="M17.586 3.586a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
-        </button>
-        <button data-ms-action="delete" data-id="${m.id}" data-name="${escapeHtml(m.name)}"
-                class="btn btn-icon" title="Delete milestone" style="color:var(--clr-danger)">
-          <svg style="width:14px;height:14px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6m4-6v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
-        </button>
-      </div>
-    </li>`;
 }
 
 function openAddMilestoneModal() {
@@ -784,6 +815,8 @@ function getElapsedMs() {
 function renderTimerControls() {
   const el = _container?.querySelector('#timer-controls');
   if (!el) return;
+  // Always a flex row so all controls sit on one line
+  el.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:nowrap';
   const { status } = _timerState;
 
   if (status === 'idle') {
@@ -796,27 +829,28 @@ function renderTimerControls() {
         Start Timer
       </button>`;
   } else {
-    const elapsed = getElapsedMs();
+    const elapsed  = getElapsedMs();
     const isPaused = status === 'paused';
     el.innerHTML = `
       <span id="timer-display"
             style="font-size:0.875rem;font-weight:700;font-variant-numeric:tabular-nums;min-width:5.5rem;text-align:center;
+                   padding:0.375rem 0.5rem;border-radius:0.4rem;background:var(--clr-surface-2);
                    color:${isPaused ? 'var(--clr-text-muted)' : 'var(--clr-success)'}">
         ${formatDuration(elapsed)}
       </span>
       ${isPaused
         ? `<button id="btn-timer-resume" class="btn btn-ghost flex items-center gap-2 text-sm"
                    style="color:var(--clr-success);border:1px solid var(--clr-success-ring)">
-             <svg style="width:13px;height:13px" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+             <svg style="width:12px;height:12px" fill="currentColor" viewBox="0 0 24 24"><polygon points="5 3 19 12 5 21 5 3"/></svg>
              Resume
            </button>`
         : `<button id="btn-timer-pause" class="btn btn-ghost flex items-center gap-2 text-sm">
-             <svg style="width:13px;height:13px" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
+             <svg style="width:12px;height:12px" fill="currentColor" viewBox="0 0 24 24"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>
              Pause
            </button>`}
       <button id="btn-timer-stop" class="btn btn-ghost flex items-center gap-2 text-sm"
               style="color:var(--clr-danger);border:1px solid var(--clr-danger-ring)">
-        <svg style="width:13px;height:13px" fill="currentColor" viewBox="0 0 24 24">
+        <svg style="width:12px;height:12px" fill="currentColor" viewBox="0 0 24 24">
           <rect x="4" y="4" width="16" height="16" rx="2"/>
         </svg>
         Stop
@@ -873,9 +907,10 @@ async function stopTimer() {
   const sessionNumber   = _sessions.length + 1;
   const name            = `Session ${sessionNumber}`;
 
-  // Attach to the most recently created milestone, or null if none exist
-  const lastMilestone = _milestones.length
-    ? _milestones.reduce((latest, m) => (m.createdAt > latest.createdAt ? m : latest), _milestones[0])
+  // Attach to the last INCOMPLETE milestone — completed milestones no longer collect sessions
+  const incompleteMs = _milestones.filter(m => !m.completed);
+  const lastMilestone = incompleteMs.length
+    ? incompleteMs.reduce((latest, m) => (m.createdAt > latest.createdAt ? m : latest), incompleteMs[0])
     : null;
 
   const endedAt   = new Date().toISOString();
