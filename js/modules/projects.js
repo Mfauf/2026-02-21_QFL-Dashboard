@@ -238,14 +238,16 @@ function rowHTML(p) {
                   && new Date(p.endDate) < new Date();
 
   return `
-    <tr class="border-b border-[var(--clr-border)] last:border-0 hover:bg-[var(--clr-surface-2)]/50 transition-colors duration-150">
+    <tr class="border-b border-[var(--clr-border)] last:border-0 transition-colors duration-150 cursor-pointer group"
+        onmouseenter="this.style.background='var(--clr-surface-2)';this.style.boxShadow='inset 3px 0 0 var(--clr-primary)'"
+        onmouseleave="this.style.background='';this.style.boxShadow=''">
 
       <!-- Project name — click to open detail view -->
       <td class="td-cell">
         <button data-action="open" data-id="${p.id}"
-                class="text-left group w-full">
-          <p class="font-medium text-[var(--clr-text)] group-hover:text-[var(--clr-primary)] transition-colors">${escapeHtml(p.name)}</p>
-          ${p.category ? `<p class="text-xs text-[var(--clr-text-faint)] mt-0.5">${escapeHtml(p.category)}</p>` : ''}
+                class="text-left w-full">
+          <p class="font-medium transition-colors duration-150 group-hover:text-[var(--clr-primary)]">${escapeHtml(p.name)}</p>
+          ${p.category ? `<p class="text-xs mt-0.5 transition-colors duration-150" style="color:var(--clr-text-faint)">${escapeHtml(p.category)}</p>` : ''}
         </button>
       </td>
 
@@ -393,13 +395,13 @@ function detailHTML(project) {
       </div>
 
       <!-- Info grid -->
-      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-5 mt-6 pt-6
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6 pt-6
                   border-t border-[var(--clr-border)]">
         ${detailField('Client',     client || '—')}
         ${detailField('Amount',     project.amount ? formatQAR(Number(project.amount)) : '—')}
         ${detailField('Hours',      project.hours  ? `${Number(project.hours).toLocaleString()} hrs` : '—')}
         ${detailField('Start Date', formatDate(project.startDate))}
-        ${detailField('Due Date',   formatDate(project.endDate), overdue ? 'var(--clr-danger)' : null)}
+        ${detailField('Due Date',   formatDate(project.endDate), overdue ? 'var(--clr-danger)' : null, overdue)}
         ${detailField('Added',      formatDate(project.createdAt?.slice(0, 10)))}
       </div>
 
@@ -428,13 +430,14 @@ function detailHTML(project) {
     </div>`;
 }
 
-function detailField(label, value, color = null) {
+function detailField(label, value, color = null, warn = false) {
+  const borderColor = warn ? 'var(--clr-danger-ring)' : 'var(--clr-border-mid)';
+  const bgColor     = warn ? 'var(--clr-danger-bg)'   : 'var(--clr-surface-2)';
   return `
-    <div>
-      <p class="text-xs font-semibold uppercase tracking-wider mb-1"
-         style="color:var(--clr-text-muted)">${label}</p>
-      <p class="text-sm font-medium"
-         style="color:${color ?? 'var(--clr-text)'}">${value}</p>
+    <div class="rounded-xl px-4 py-3" style="background:${bgColor};border:1px solid ${borderColor}">
+      <p style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
+                color:var(--clr-text-faint);margin-bottom:6px">${label}</p>
+      <p style="font-size:0.9rem;font-weight:600;color:${color ?? 'var(--clr-text)'}">${value}</p>
     </div>`;
 }
 
