@@ -36,10 +36,8 @@ export const DEFAULTS = {
       'Web Design', 'Mobile App', 'Branding', 'Consulting',
       'SEO', 'UI/UX', 'Development', 'Other',
     ],
-    income: [
-      'Project Payment', 'Consulting', 'Retainer', 'Bonus', 'Refund', 'Other',
-    ],
-    expense: [
+    transaction: [
+      'Project Payment', 'Consulting', 'Retainer', 'Bonus', 'Refund',
       'Software / Tools', 'Hardware', 'Marketing', 'Office',
       'Freelancer Fee', 'Tax', 'Hosting', 'Transport', 'Education', 'Other',
     ],

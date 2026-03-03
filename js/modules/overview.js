@@ -68,9 +68,9 @@ export async function mount(container) {
         icon: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>` })}
       ${statCard({ label: 'Total Clients',  value: clients.length,   sub: `${activeClients} active`, color: 'violet',
         icon: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0z"/>` })}
-      ${statCard({ label: 'Total Income',   value: formatQAR(income), sub: `Expenses: ${formatQAR(outcome, true)}`, color: 'emerald',
+      ${statCard({ label: 'Total Income',   value: formatQAR(income, true), sub: `Expenses: ${formatQAR(outcome, true)}`, color: 'emerald',
         icon: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/>` })}
-      ${statCard({ label: 'Net Profit',     value: formatQAR(profit), sub: profit >= 0 ? '▲ Positive' : '▼ Negative', color: profit >= 0 ? 'emerald' : 'red',
+      ${statCard({ label: 'Net Profit',     value: formatQAR(profit, true), sub: profit >= 0 ? '▲ Positive' : '▼ Negative', color: profit >= 0 ? 'emerald' : 'red',
         icon: `<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>` })}
     </div>
 
@@ -106,7 +106,8 @@ export async function mount(container) {
     <p class="section-label mb-4">Recent Transactions</p>
     <div class="card overflow-hidden mb-6">
       ${recent.length ? `
-        <table class="w-full text-sm">
+        <div class="overflow-x-auto">
+        <table class="w-full text-sm min-w-[28rem]">
           <thead>
             <tr class="border-b border-[var(--clr-border)]">
               <th class="th-cell text-left">Date</th>
@@ -129,7 +130,8 @@ export async function mount(container) {
                 </td>
               </tr>`).join('')}
           </tbody>
-        </table>` : `
+        </table>
+        </div>` : `
         <div class="empty-state py-10">
           <p class="font-medium text-[var(--clr-text-muted)]">No transactions yet</p>
           <p class="text-sm">Add income or expenses in the Finances section.</p>
@@ -283,9 +285,9 @@ function statCard({ label, value, sub, color, icon }) {
     <div class="card p-5 flex flex-col gap-4 hover:scale-[1.015] transition-transform duration-200 cursor-default"
          style="border-color:${c.border}; background: linear-gradient(135deg, ${c.bg} 0%, var(--clr-surface) 100%)">
       <div class="flex items-start justify-between gap-3">
-        <div class="min-w-0">
+        <div class="min-w-0 flex-1">
           <p class="section-label mb-1">${label}</p>
-          <p class="text-2xl font-bold text-[var(--clr-text)] leading-tight">${value}</p>
+          <p class="text-2xl font-bold text-[var(--clr-text)] leading-tight break-words">${value}</p>
         </div>
         <div class="w-11 h-11 rounded-xl flex items-center justify-center shrink-0"
              style="background:${c.bg}; color:${c.text}">

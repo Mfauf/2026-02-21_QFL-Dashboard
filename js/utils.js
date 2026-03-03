@@ -56,9 +56,12 @@ export function timeAgo(date) {
  */
 export function formatQAR(amount, compact = false) {
   if (amount == null || isNaN(amount)) return '—';
-  if (compact && Math.abs(amount) >= 1000) {
-    const k = (amount / 1000).toFixed(1).replace(/\.0$/, '');
-    return `QAR ${k}K`;
+  if (compact) {
+    const abs = Math.abs(amount);
+    const sign = amount < 0 ? '-' : '';
+    if (abs >= 1_000_000_000) return `QAR ${sign}${(abs / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}B`;
+    if (abs >= 1_000_000)     return `QAR ${sign}${(abs / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+    if (abs >= 1_000)         return `QAR ${sign}${(abs / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
   }
   return 'QAR ' + Number(amount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }

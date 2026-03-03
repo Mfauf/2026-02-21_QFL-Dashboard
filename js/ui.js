@@ -173,13 +173,21 @@ export function openConfirm({ title = 'Are you sure?', message, confirmLabel = '
 
 /* ── Sidebar (mobile) ───────────────────────────────────────────────────── */
 export function openSidebar() {
-  document.getElementById('sidebar').classList.remove('-translate-x-full');
-  document.getElementById('sidebar-overlay').classList.remove('hidden');
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('sidebar-overlay');
+  if (!sb) return;
+  sb.style.transform = '';           // clear any live-drag leftover
+  sb.classList.remove('-translate-x-full');
+  ov?.classList.remove('hidden');
 }
 
 export function closeSidebar() {
-  document.getElementById('sidebar').classList.add('-translate-x-full');
-  document.getElementById('sidebar-overlay').classList.add('hidden');
+  const sb = document.getElementById('sidebar');
+  const ov = document.getElementById('sidebar-overlay');
+  if (!sb) return;
+  sb.style.transform = '';
+  sb.classList.add('-translate-x-full');
+  ov?.classList.add('hidden');
 }
 
 /* ── Init shared UI listeners ────────────────────────────────────────────── */
@@ -226,4 +234,102 @@ export function initUI() {
       addBtn?.click();
     }
   });
+
+  /* ── Swipe gesture for sidebar (mobile only) ──────────────────────────── */
+  _initSidebarSwipe();
 }
+
+function _initSidebarSwipe() {
+  const EDGE_ZONE   = 30;   // px from left edge that starts an open-swipe
+  const MIN_SWIPE   = 40;   // minimum horizontal distance to commit open/close
+  const MAX_VERT    = 60;   // max vertical drift allowed before we abandon the gesture
+
+  let touchStartX = 0;
+  let touchStartY = 0;
+  let tracking    = false;  // are we tracking a swipe candidate?
+  let direction   = null;   // 'open' | 'close'
+
+  const sidebar = () => document.getElementById('sidebar');
+  const overlay = () => document.getElementById('sidebar-overlay');
+  const isOpen  = () => sidebar() && !sidebar().classList.contains('-translate-x-full');
+  const sidebarW = () => sidebar()?.offsetWidth ?? 260;
+
+  // Only wire up on touch devices / narrow screens
+  document.addEventListener('touchstart', (e) => {
+    const touch = e.touches[0];
+    touchStartX = touch.clientX;
+    touchStartY = touch.clientY;
+    tracking = false;
+    direction = null;
+
+    // Decide if this touch could be a sidebar swipe:
+    // - open: starting from within EDGE_ZONE at the left
+    // - close: sidebar is open and touch starts anywhere inside it
+    if (!isOpen() && touchStartX <= EDGE_ZONE) {
+      direction = 'open';
+      tracking  = true;
+    } else if (isOpen()) {
+      direction = 'close';
+      tracking  = true;
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    if (!tracking) return;
+    const touch = e.touches[0];
+    const dx = touch.clientX - touchStartX;
+    const dy = Math.abs(touch.clientY - touchStartY);
+
+    // Abandon if too much vertical drift
+    if (dy > MAX_VERT) { tracking = false; _resetSidebar(); return; }
+
+    const sb = sidebar();
+    if (!sb) return;
+
+    if (direction === 'open') {
+      // Drag right: translate from fully hidden (−sidebarW) toward 0
+      const offset = Math.min(dx - sidebarW(), 0);
+      sb.style.transition = 'none';
+      sb.style.transform  = `translateX(${offset}px)`;
+      // Show overlay faintly while dragging
+      const ov = overlay();
+      if (ov) { ov.classList.remove('hidden'); ov.style.opacity = String(Math.min(dx / sidebarW(), 1)); }
+    } else if (direction === 'close') {
+      // Drag left: translate from 0 toward negative
+      const offset = Math.min(dx, 0);
+      sb.style.transition = 'none';
+      sb.style.transform  = `translateX(${offset}px)`;
+      const ov = overlay();
+      if (ov) ov.style.opacity = String(Math.max(1 + dx / sidebarW(), 0));
+    }
+  }, { passive: true });
+
+  document.addEventListener('touchend', (e) => {
+    if (!tracking) return;
+    tracking = false;
+    const touch = e.changedTouches[0];
+    const dx = touch.clientX - touchStartX;
+    const sb = sidebar();
+    if (!sb) return;
+
+    // Restore transition
+    sb.style.transition = '';
+    const ov = overlay();
+    if (ov) ov.style.opacity = '';
+
+    if (direction === 'open'  && dx >= MIN_SWIPE)  { openSidebar();  }
+    else if (direction === 'close' && dx <= -MIN_SWIPE) { closeSidebar(); }
+    else { _resetSidebar(); }
+  }, { passive: true });
+
+  function _resetSidebar() {
+    const sb = sidebar();
+    if (!sb) return;
+    sb.style.transition = '';
+    sb.style.transform  = '';
+    const ov = overlay();
+    if (ov) ov.style.opacity = '';
+    // Re-sync classes to actual state
+    if (isOpen()) { ov?.classList.remove('hidden'); }
+    else          { ov?.classList.add('hidden'); }
+  }}
