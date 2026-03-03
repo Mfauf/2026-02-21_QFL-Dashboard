@@ -29,8 +29,8 @@ let _container    = null;
 let _dateRange    = 'all';   // 'all' | 'last-month' | 'last-year'
 
 /* ── Categories — read live from settings-store so user edits are reflected ─ */
-const incomeCats  = () => getSettings().categories.income;
-const expenseCats = () => getSettings().categories.expense;
+const incomeCats  = () => getSettings().categories.transaction;
+const expenseCats = () => getSettings().categories.transaction;
 
 /* ── Mount / unmount ────────────────────────────────────────────────────── */
 export async function mount(container) {
@@ -201,7 +201,7 @@ function statCard(label, value, color) {
   const c = map[color] ?? map.neutral;
   return `
     <div class="card flex flex-col gap-1 px-5 py-4" style="border-color:${c.border}; background:${c.bg}">
-      <span class="text-2xl font-bold leading-tight whitespace-nowrap" style="color:${c.text}">${value}</span>
+      <span class="text-2xl font-bold leading-tight break-words" style="color:${c.text}">${value}</span>
       <span class="text-xs font-semibold uppercase tracking-wider text-[var(--clr-text-muted)]">${label}</span>
     </div>`;
 }

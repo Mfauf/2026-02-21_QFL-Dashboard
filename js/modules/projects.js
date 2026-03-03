@@ -482,29 +482,31 @@ function detailHTML(project) {
   return `
     <!-- Project header card -->
     <div class="card p-6 mb-6">
-      <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
-        <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
-            <!-- Back icon — inline with title -->
-            <button id="btn-back-to-projects"
-                    class="btn btn-icon shrink-0"
-                    title="Back to Projects" aria-label="Back to Projects"
-                    style="margin-right:2px">
-              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-              </svg>
-            </button>
-            <h2 class="text-xl font-semibold text-[var(--clr-text)]">${escapeHtml(project.name)}</h2>
-            <span class="badge ${status.badge}">${status.label}</span>
+      <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <div class="flex-1 min-w-0 flex items-start gap-2">
+          <!-- Back button -->
+          <button id="btn-back-to-projects"
+                  class="btn btn-icon shrink-0 mt-0.5"
+                  title="Back to Projects" aria-label="Back to Projects">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+          </button>
+          <!-- Title + category stacked -->
+          <div class="min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <h2 class="text-xl font-semibold text-[var(--clr-text)]">${escapeHtml(project.name)}</h2>
+              <span class="badge ${status.badge}">${status.label}</span>
+            </div>
+            ${project.category ? `<p class="text-sm text-[var(--clr-text-faint)] mt-0.5">${escapeHtml(project.category)}</p>` : ''}
           </div>
-          ${project.category ? `<p class="text-sm text-[var(--clr-text-faint)] mt-1 ml-8">${escapeHtml(project.category)}</p>` : ''}
         </div>
 
-        <div class="flex items-center gap-2 shrink-0 flex-wrap">
+        <div class="grid grid-cols-2 sm:flex sm:flex-wrap items-center gap-2 shrink-0 w-full sm:w-auto">
           <button id="btn-detail-create-invoice"
-                  class="btn btn-ghost flex items-center gap-2 text-sm"
+                  class="btn btn-ghost flex items-center justify-center gap-2 text-sm w-full sm:w-auto"
                   title="Create invoice for this project">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586
                    a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
@@ -512,9 +514,9 @@ function detailHTML(project) {
             Invoice
           </button>
           <button id="btn-detail-blueprint"
-                  class="btn btn-ghost flex items-center gap-2 text-sm"
+                  class="btn btn-ghost flex items-center justify-center gap-2 text-sm w-full sm:w-auto"
                   title="Open Project Blueprint / Proposal">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2
                    M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2
@@ -523,8 +525,8 @@ function detailHTML(project) {
             Blueprint
           </button>
           <button id="btn-detail-edit"
-                  class="btn btn-secondary flex items-center gap-2 text-sm">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  class="btn btn-secondary flex items-center justify-center gap-2 text-sm w-full sm:w-auto">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5
                    m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
@@ -532,9 +534,9 @@ function detailHTML(project) {
             Edit
           </button>
           <button id="btn-detail-delete"
-                  class="btn btn-ghost flex items-center gap-2 text-sm"
+                  class="btn btn-ghost flex items-center justify-center gap-2 text-sm w-full sm:w-auto"
                   style="color:var(--clr-danger)">
-            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <svg class="w-4 h-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                 d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858
                    L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
@@ -683,8 +685,8 @@ function renderMilestones() {
     : 'var(--clr-primary)';
 
   const timeBarHTML = showTimeBar ? `
-    <div class="mb-5 px-4 py-3 rounded-xl" style="background:var(--clr-surface-2);border:1px solid var(--clr-border-mid)">
-      <div class="flex justify-between items-center mb-2">
+    <div class="mb-5 px-4 rounded-xl" style="background:var(--clr-surface-2);border:1px solid var(--clr-border-mid);padding-top:${budgetHours ? '0.75rem' : '0.45rem'};padding-bottom:${budgetHours ? '0.75rem' : '0.45rem'}">
+      <div class="flex justify-between items-center ${budgetHours ? 'mb-2' : ''}">
         <span style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--clr-text-faint)">Time Tracked</span>
         <span style="font-size:13px;font-weight:700;color:var(--clr-text)">
           ${formatDurationShort(totalTrackedSec)}
@@ -1187,6 +1189,54 @@ function openBlueprintView() {
 function blueprintViewHTML(project, clientName, terms) {
   const overdue = project.endDate && project.status !== 'complete' && project.status !== 'cancelled'
                   && new Date(project.endDate) < new Date();
+
+  const bpDefaults = getSettings().defaultFeatures ?? [];
+  const addFeatureBtnHTML = bpDefaults.length ? `
+    <div style="position:relative" id="bp-add-feature-wrap">
+      <button id="bp-add-feature-toggle" class="btn btn-secondary flex items-center gap-2 text-sm">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+        </svg>
+        Add Feature
+        <svg class="w-3 h-3" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19 9l-7 7-7-7"/>
+        </svg>
+      </button>
+      <div id="bp-add-feature-menu"
+           style="display:none;position:absolute;right:0;top:calc(100% + 6px);z-index:200;
+                  min-width:220px;background:var(--clr-surface);border:1px solid var(--clr-border);
+                  border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,.18);overflow:hidden;">
+        <button data-add-type="new"
+                style="width:100%;display:flex;align-items:center;gap:8px;padding:9px 14px;
+                       background:none;border:none;cursor:pointer;font-size:13px;font-weight:600;
+                       color:var(--clr-text);text-align:left;"
+                onmouseenter="this.style.background='var(--clr-surface-2)'"
+                onmouseleave="this.style.background='none'">
+          <svg style="width:13px;height:13px;flex-shrink:0" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+          </svg>
+          New
+        </button>
+        <div style="height:1px;background:var(--clr-border);margin:2px 0"></div>
+        ${bpDefaults.map((d, i) => `
+          <button data-add-type="preset" data-preset-idx="${i}"
+                  style="width:100%;display:flex;align-items:center;justify-content:space-between;
+                         gap:10px;padding:9px 14px;background:none;border:none;cursor:pointer;
+                         font-size:13px;color:var(--clr-text);text-align:left;"
+                  onmouseenter="this.style.background='var(--clr-surface-2)'"
+                  onmouseleave="this.style.background='none'">
+            <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(d.name)}</span>
+            ${d.price != null && d.price !== '' ? `<span style="font-size:11px;color:var(--clr-text-faint);flex-shrink:0">QAR ${Number(d.price).toLocaleString()}</span>` : ''}
+          </button>`).join('')}
+      </div>
+    </div>` : `
+    <button id="bp-add-feature" class="btn btn-secondary flex items-center gap-2 text-sm">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+      </svg>
+      Add Feature
+    </button>`;
+
   return `
     <!-- Blueprint header card -->
     <div class="card p-6 mb-6">
@@ -1257,12 +1307,7 @@ function blueprintViewHTML(project, clientName, terms) {
           <h3 class="font-semibold text-[var(--clr-text)]">Features &amp; Services</h3>
           <p class="text-xs text-[var(--clr-text-faint)] mt-0.5">Deliverables included in this proposal</p>
         </div>
-        <button id="bp-add-feature" class="btn btn-secondary flex items-center gap-2 text-sm">
-          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
-          </svg>
-          Add Feature
-        </button>
+        ${addFeatureBtnHTML}
       </div>
       <div id="bp-features-table"></div>
     </div>
@@ -1390,24 +1435,15 @@ function bindBlueprintFeatureRowListeners() {
   );
 }
 
-function showBlueprintFeatureForm(editId = null) {
-  const f        = (editId != null) ? (_blueprintFeatures.find(x => x.id === editId) ?? {}) : {};
-  const defaults = getSettings().defaultFeatures ?? [];
-  const defaultPickerHTML = defaults.length ? `
-    <div>
-      <label class="form-label">Load from Default</label>
-      <select id="bp-f-default" class="form-input">
-        <option value="">— choose a preset —</option>
-        ${defaults.map((d, i) => `<option value="${i}">${escapeHtml(d.name)}${d.price != null && d.price !== '' ? ` — QAR ${Number(d.price).toLocaleString()}` : ''}</option>`).join('')}
-      </select>
-    </div>` : '';
+function showBlueprintFeatureForm(editId = null, prefill = null) {
+  const base = (editId != null) ? (_blueprintFeatures.find(x => x.id === editId) ?? {}) : (prefill ?? {});
+  const f    = base;
 
   openModal({
     title:       editId != null ? 'Edit Feature' : 'Add Feature',
     submitLabel: editId != null ? 'Save Changes' : 'Add Feature',
     bodyHTML: `
       <div class="space-y-4 px-6 py-5">
-        ${defaultPickerHTML}
         <div>
           <label class="form-label">
             Feature / Service <span class="text-[var(--clr-danger)]">*</span>
@@ -1455,23 +1491,6 @@ function showBlueprintFeatureForm(editId = null) {
       renderBlueprintFeatures();
     },
   });
-
-  // openModal sets innerHTML synchronously — wire the preset picker right after
-  if (defaults.length) {
-    document.getElementById('bp-f-default')?.addEventListener('change', e => {
-      const idx = e.target.value;
-      if (idx === '') return;
-      const d = defaults[Number(idx)];
-      if (!d) return;
-      const nameEl   = document.getElementById('bp-f-name');
-      const detailEl = document.getElementById('bp-f-details');
-      const priceEl  = document.getElementById('bp-f-price');
-      if (nameEl)   nameEl.value   = d.name   ?? '';
-      if (detailEl) detailEl.value = d.details ?? '';
-      if (priceEl)  priceEl.value  = (d.price != null && d.price !== '') ? d.price : '';
-      nameEl?.focus();
-    });
-  }
 }
 
 async function confirmDeleteBlueprintFeature(id, name) {
@@ -1504,8 +1523,44 @@ function bindBlueprintListeners(container, project, client) {
     navigate('invoices');
   });
 
-  container.querySelector('#bp-add-feature')
-    ?.addEventListener('click', () => showBlueprintFeatureForm(null));
+  // ── Add Feature — dropdown (when defaults exist) or plain button
+  const _addWrap = container.querySelector('#bp-add-feature-wrap');
+  const _addBtn  = container.querySelector('#bp-add-feature');
+  if (_addWrap) {
+    const _toggle = _addWrap.querySelector('#bp-add-feature-toggle');
+    const _menu   = _addWrap.querySelector('#bp-add-feature-menu');
+    _toggle?.addEventListener('click', (e) => {
+      e.stopPropagation();
+      _menu.style.display = _menu.style.display === 'none' ? 'block' : 'none';
+    });
+    _menu?.addEventListener('click', async (e) => {
+      const item = e.target.closest('[data-add-type]');
+      if (!item) return;
+      _menu.style.display = 'none';
+      if (item.dataset.addType === 'new') {
+        showBlueprintFeatureForm(null, null);
+      } else if (item.dataset.addType === 'preset') {
+        const d = (getSettings().defaultFeatures ?? [])[Number(item.dataset.presetIdx)];
+        if (!d) return;
+        await addRecord('blueprintFeatures', {
+          projectId: _currentProjectId,
+          name:      d.name ?? '',
+          details:   d.details ?? '',
+          price:     d.price != null && d.price !== '' ? Number(d.price) : null,
+          sortOrder: _blueprintFeatures.length,
+          createdAt: new Date().toISOString(),
+        });
+        _blueprintFeatures = await loadBlueprintFeatures(_currentProjectId);
+        renderBlueprintFeatures();
+      }
+    });
+    document.addEventListener('click', function _closeBpMenu(e) {
+      if (!_addWrap.isConnected) { document.removeEventListener('click', _closeBpMenu, true); return; }
+      if (!_addWrap.contains(e.target)) _menu.style.display = 'none';
+    }, true);
+  } else if (_addBtn) {
+    _addBtn.addEventListener('click', () => showBlueprintFeatureForm(null, null));
+  }
 
   container.querySelector('#bp-export-pdf')
     ?.addEventListener('click', () => {

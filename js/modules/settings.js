@@ -80,9 +80,8 @@ function populate() {
   _v('sync-peer-uid', s.sync?.peerUID ?? '');
 
   // Category chip lists
-  renderChips('cats-project', s.categories.project);
-  renderChips('cats-income',  s.categories.income);
-  renderChips('cats-expense', s.categories.expense);
+  renderChips('cats-project',     s.categories.project);
+  renderChips('cats-transaction', s.categories.transaction);
 }
 
 /* ── Default Features list renderer ────────────────────────────────────── */
@@ -106,7 +105,7 @@ function renderDefaultFeaturesList(list) {
                 style="color:var(--clr-text-faint)">Feature / Service</th>
             <th class="text-left py-2 pb-3 pr-4 font-semibold text-xs uppercase tracking-wide"
                 style="color:var(--clr-text-faint)">Details</th>
-            <th class="text-right py-2 pb-3 pr-6 font-semibold text-xs uppercase tracking-wide"
+            <th class="text-left py-2 pb-3 pr-2 font-semibold text-xs uppercase tracking-wide"
                 style="color:var(--clr-text-faint)">Price (QAR)</th>
             <th class="py-2 pb-3 w-16"></th>
           </tr>
@@ -116,23 +115,24 @@ function renderDefaultFeaturesList(list) {
             <tr class="border-b border-[var(--clr-border)] last:border-0 hover:bg-[var(--clr-surface-2)] transition-colors">
               <td class="py-2.5 pr-4 font-medium" style="color:var(--clr-text)">${escapeHtml(f.name)}</td>
               <td class="py-2.5 pr-4 max-w-[200px]" style="color:var(--clr-text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(f.details || '—')}</td>
-              <td class="py-2.5 pr-6 text-right" style="color:var(--clr-text-muted)">${(f.price != null && f.price !== '') ? Number(f.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+              <td class="py-2.5 pr-2 text-left" style="color:var(--clr-text-muted)">${(f.price != null && f.price !== '') ? Number(f.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
               <td class="py-2.5">
-                <div class="flex items-center justify-end gap-1.5">
+                <div class="flex items-center justify-end gap-1">
                   <button data-sdf-edit="${i}" class="btn btn-icon" title="Edit feature">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round"
-                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5
-                           m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    <svg style="width:11px;height:11px" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                      <path d="M17.586 3.586a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                      <path d="M2 21h20"/>
                     </svg>
                   </button>
                   <button data-sdf-delete="${i}" class="btn btn-icon" title="Delete feature"
                           style="color:var(--clr-danger)">
-                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
-                      <path stroke-linecap="round" stroke-linejoin="round"
-                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0
-                           01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0
-                           00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    <svg style="width:11px;height:11px" fill="none" stroke="currentColor"
+                         stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+                      <polyline points="3 6 5 6 21 6"/>
+                      <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+                      <path d="M10 11v6m4-6v6"/>
+                      <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
                     </svg>
                   </button>
                 </div>
@@ -276,9 +276,8 @@ function renderChips(listId, cats) {
 
 /* ── Category helpers ───────────────────────────────────────────────────── */
 const LIST_TO_KEY = {
-  'cats-project': 'project',
-  'cats-income':  'income',
-  'cats-expense': 'expense',
+  'cats-project':     'project',
+  'cats-transaction': 'transaction',
 };
 
 function addCategory(listId, value) {
@@ -516,7 +515,7 @@ function bindAll() {
   });
 
   // ── Category add buttons
-  ['project', 'income', 'expense'].forEach(type => {
+  ['project', 'transaction'].forEach(type => {
     const listId = `cats-${type}`;
     const input  = _container.querySelector(`#cat-${type}-input`);
     const btnAdd = _container.querySelector(`#cat-${type}-add`);
@@ -745,23 +744,13 @@ function shellHTML() {
       })}
 
       <!-- ═══════════════════════════════════════════════════════════
-           SECTION 4 — Income Categories
+           SECTION 4 — Transaction Categories
       ════════════════════════════════════════════════════════════ -->
       ${categorySection({
-        id:          'income',
-        title:       'Income Categories',
-        description: 'Suggested categories for income transactions.',
-        placeholder: 'e.g. License Fee',
-      })}
-
-      <!-- ═══════════════════════════════════════════════════════════
-           SECTION 5 — Expense Categories
-      ════════════════════════════════════════════════════════════ -->
-      ${categorySection({
-        id:          'expense',
-        title:       'Expense Categories',
-        description: 'Suggested categories for expense transactions.',
-        placeholder: 'e.g. Legal Fees',
+        id:          'transaction',
+        title:       'Transaction Categories',
+        description: 'Suggested categories for both income and expense transactions.',
+        placeholder: 'e.g. Consulting',
       })}
 
       <!-- ═══════════════════════════════════════════════════════════
