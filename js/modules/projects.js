@@ -528,41 +528,32 @@ function renderMilestones() {
 
 function milestoneItemHTML(m) {
   const done = m.completed;
+  // Toggle styles — fully inline so they never depend on a Tailwind build scan
+  const toggleStyle = done
+    ? 'width:20px;height:20px;border-radius:9999px;border:2px solid var(--clr-success);background:var(--clr-success);display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;transition:all 150ms ease'
+    : 'width:20px;height:20px;border-radius:9999px;border:2px solid var(--clr-text-faint);background:transparent;display:flex;align-items:center;justify-content:center;flex-shrink:0;cursor:pointer;transition:all 150ms ease';
+
   return `
-    <li class="flex items-center gap-3 px-3 py-3 rounded-lg border transition-colors group
-               border-[var(--clr-border)] hover:bg-[var(--clr-surface-2)]"
-        style="${done ? 'opacity:0.72' : ''}">
+    <li class="flex items-center gap-3 px-3 py-3 rounded-lg border transition-colors group"
+        style="border-color:var(--clr-border-mid);${done ? 'opacity:0.75' : ''}">
       <!-- Toggle button -->
       <button data-ms-action="toggle" data-id="${m.id}"
               title="${done ? 'Mark incomplete' : 'Mark complete'}"
-              class="shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center
-                     transition-all"
-              style="border-color:${done ? 'var(--clr-success)' : 'var(--clr-border)'};
-                     background:${done ? 'var(--clr-success)' : 'transparent'}">
-        ${done ? `<svg class="w-3 h-3" fill="none" stroke="white" stroke-width="3" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/>
-        </svg>` : ''}
+              style="${toggleStyle}">
+        ${done ? `<svg style="width:11px;height:11px" fill="none" stroke="white" stroke-width="3" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>` : ''}
       </button>
       <!-- Name -->
-      <span class="flex-1 text-sm ${done ? 'line-through' : ''}"
-            style="color:${done ? 'var(--clr-text-muted)' : 'var(--clr-text)'}">${escapeHtml(m.name)}</span>
-      <!-- Actions (reveal on hover) -->
-      <div class="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <span class="flex-1 text-sm" style="${done ? 'text-decoration:line-through;color:var(--clr-text-muted)' : 'color:var(--clr-text)'}">${escapeHtml(m.name)}</span>
+      <!-- Actions (always visible, dimmed until hover) -->
+      <div class="flex items-center gap-1" style="opacity:0.35;transition:opacity 150ms ease"
+           onmouseenter="this.style.opacity='1'" onmouseleave="this.style.opacity='0.35'">
         <button data-ms-action="rename" data-id="${m.id}" data-name="${escapeHtml(m.name)}"
                 class="btn btn-icon" title="Rename milestone">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5
-                 m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
-          </svg>
+          <svg style="width:14px;height:14px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5"/><path d="M17.586 3.586a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
         </button>
         <button data-ms-action="delete" data-id="${m.id}" data-name="${escapeHtml(m.name)}"
                 class="btn btn-icon" title="Delete milestone" style="color:var(--clr-danger)">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858
-                 L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
-          </svg>
+          <svg style="width:14px;height:14px" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6m4-6v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/></svg>
         </button>
       </div>
     </li>`;
