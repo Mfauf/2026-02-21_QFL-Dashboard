@@ -366,8 +366,8 @@ async function openDetailView(id) {
 }
 
 async function showListView() {
-  if (_timerState.intervalId) clearInterval(_timerState.intervalId);
-  _timerState = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
+  // Preserve the timer — do NOT clear it when going back to the list.
+  // The active timer continues in the background (interval + events keep firing).
   _currentProjectId = null;
   _milestones       = [];
   _sessions         = [];
@@ -383,26 +383,24 @@ function detailHTML(project) {
                   && new Date(project.endDate) < new Date();
 
   return `
-    <!-- Back -->
-    <div class="mb-6">
-      <button id="btn-back-to-projects"
-              class="btn btn-ghost flex items-center gap-2 text-sm pl-0">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
-        </svg>
-        Back to Projects
-      </button>
-    </div>
-
     <!-- Project header card -->
     <div class="card p-6 mb-6">
       <div class="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
         <div class="flex-1 min-w-0">
-          <div class="flex items-center gap-3 flex-wrap">
+          <div class="flex items-center gap-2 flex-wrap">
+            <!-- Back icon — inline with title -->
+            <button id="btn-back-to-projects"
+                    class="btn btn-icon shrink-0"
+                    title="Back to Projects" aria-label="Back to Projects"
+                    style="margin-right:2px">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+              </svg>
+            </button>
             <h2 class="text-xl font-semibold text-[var(--clr-text)]">${escapeHtml(project.name)}</h2>
             <span class="badge ${status.badge}">${status.label}</span>
           </div>
-          ${project.category ? `<p class="text-sm text-[var(--clr-text-faint)] mt-1">${escapeHtml(project.category)}</p>` : ''}
+          ${project.category ? `<p class="text-sm text-[var(--clr-text-faint)] mt-1 ml-8">${escapeHtml(project.category)}</p>` : ''}
         </div>
 
         <div class="flex items-center gap-2 shrink-0 flex-wrap">
