@@ -14,7 +14,7 @@
 
 import { getSettings, saveSettings, DEFAULTS } from '../settings-store.js';
 import { getAllRecords, clearStore, bulkAddRecords } from '../db.js';
-import { toast, openConfirm }          from '../ui.js';
+import { toast, openConfirm, openModal } from '../ui.js';
 import { escapeHtml }                  from '../utils.js';
 import { applyTheme }                  from '../theme.js';
 import { getOrCreateUID, openPeer, connectAndSync } from '../sync.js';
@@ -57,7 +57,6 @@ function populate() {
 
   // Profile fields
   _v('sp-name',     s.profile.name);
-  _v('sp-company',  s.profile.company);
   _v('sp-email',    s.profile.email);
   _v('sp-phone',    s.profile.phone);
   _v('sp-tagline',  s.profile.tagline);
@@ -68,6 +67,11 @@ function populate() {
   // Invoice defaults
   _v('si-prefix',  s.invoice.prefix);
   _v('si-terms',   s.invoice.paymentTerms);
+  _v('sb-bp-terms',   s.blueprint?.terms          ?? '');
+  _v('sb-bp-hourly',  s.blueprint?.amountPerHour  ?? '');
+
+  // Default Features
+  renderDefaultFeaturesList(s.defaultFeatures ?? []);
 
   // Appearance
   updateThemeBtns(s.appearance?.theme ?? 'system');
@@ -79,6 +83,119 @@ function populate() {
   renderChips('cats-project', s.categories.project);
   renderChips('cats-income',  s.categories.income);
   renderChips('cats-expense', s.categories.expense);
+}
+
+/* ── Default Features list renderer ────────────────────────────────────── */
+function renderDefaultFeaturesList(list) {
+  const el = _container?.querySelector('#sdf-list');
+  if (!el) return;
+
+  if (!list.length) {
+    el.innerHTML = `<p class="text-sm text-center py-6" style="color:var(--clr-text-faint)">
+      No default features yet. Click <strong>Add Feature</strong> to create one.
+    </p>`;
+    return;
+  }
+
+  el.innerHTML = `
+    <div class="overflow-x-auto -mx-1">
+      <table class="w-full text-sm">
+        <thead>
+          <tr class="border-b border-[var(--clr-border)]">
+            <th class="text-left py-2 pb-3 pr-4 font-semibold text-xs uppercase tracking-wide"
+                style="color:var(--clr-text-faint)">Feature / Service</th>
+            <th class="text-left py-2 pb-3 pr-4 font-semibold text-xs uppercase tracking-wide"
+                style="color:var(--clr-text-faint)">Details</th>
+            <th class="text-right py-2 pb-3 pr-6 font-semibold text-xs uppercase tracking-wide"
+                style="color:var(--clr-text-faint)">Price (QAR)</th>
+            <th class="py-2 pb-3 w-16"></th>
+          </tr>
+        </thead>
+        <tbody>
+          ${list.map((f, i) => `
+            <tr class="border-b border-[var(--clr-border)] last:border-0 hover:bg-[var(--clr-surface-2)] transition-colors">
+              <td class="py-2.5 pr-4 font-medium" style="color:var(--clr-text)">${escapeHtml(f.name)}</td>
+              <td class="py-2.5 pr-4 max-w-[200px]" style="color:var(--clr-text-muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(f.details || '—')}</td>
+              <td class="py-2.5 pr-6 text-right" style="color:var(--clr-text-muted)">${(f.price != null && f.price !== '') ? Number(f.price).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}</td>
+              <td class="py-2.5">
+                <div class="flex items-center justify-end gap-1.5">
+                  <button data-sdf-edit="${i}" class="btn btn-icon" title="Edit feature">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5
+                           m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    </svg>
+                  </button>
+                  <button data-sdf-delete="${i}" class="btn btn-icon" title="Delete feature"
+                          style="color:var(--clr-danger)">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+                      <path stroke-linecap="round" stroke-linejoin="round"
+                        d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0
+                           01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0
+                           00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/>
+                    </svg>
+                  </button>
+                </div>
+              </td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
+}
+
+function showDefaultFeatureForm(editIndex = null) {
+  const list   = getSettings().defaultFeatures ?? [];
+  const f      = editIndex != null ? (list[editIndex] ?? {}) : {};
+  const isEdit = editIndex != null;
+
+  openModal({
+    title:       isEdit ? 'Edit Default Feature' : 'Add Default Feature',
+    submitLabel: isEdit ? 'Save Changes' : 'Add Feature',
+    bodyHTML: `
+      <div class="space-y-4 px-6 py-5">
+        <div>
+          <label class="form-label">
+            Feature / Service <span style="color:var(--clr-danger)">*</span>
+          </label>
+          <input id="sdf-f-name" class="form-input"
+                 value="${escapeHtml(f.name || '')}"
+                 placeholder="e.g. Mobile App Design"/>
+        </div>
+        <div>
+          <label class="form-label">Details</label>
+          <input id="sdf-f-details" class="form-input"
+                 value="${escapeHtml(f.details || '')}"
+                 placeholder="Brief description of scope"/>
+        </div>
+        <div>
+          <label class="form-label">
+            Price
+            <span class="text-xs font-normal ml-1" style="color:var(--clr-text-faint)">(optional, QAR)</span>
+          </label>
+          <input id="sdf-f-price" class="form-input" type="number" min="0" step="0.01"
+                 value="${f.price ?? ''}" placeholder="0.00"/>
+        </div>
+      </div>`,
+    onSubmit: () => {
+      const name     = document.getElementById('sdf-f-name')?.value.trim();
+      const details  = document.getElementById('sdf-f-details')?.value.trim() ?? '';
+      const priceRaw = document.getElementById('sdf-f-price')?.value.trim();
+      if (!name) {
+        document.getElementById('sdf-f-name')?.focus();
+        throw new Error('Feature / Service name is required.');
+      }
+      const price    = priceRaw !== '' ? Number(priceRaw) : null;
+      const updated  = [...(getSettings().defaultFeatures ?? [])];
+      if (isEdit) {
+        updated[editIndex] = { ...(updated[editIndex] ?? {}), name, details, price };
+      } else {
+        updated.push({ id: Date.now(), name, details, price });
+      }
+      saveSettings({ defaultFeatures: updated });
+      renderDefaultFeaturesList(updated);
+      toast(isEdit ? 'Feature updated.' : 'Feature added.', 'success');
+    },
+  });
 }
 
 /* ── Avatar preview renderer ────────────────────────────────────────────── */
@@ -334,10 +451,12 @@ function bindAll() {
       profile: {
         avatar:  currentAvatar,
         name:    fd.get('name')?.trim()    || '',
-        company: fd.get('company')?.trim() || '',
         email:   fd.get('email')?.trim()   || '',
         phone:   fd.get('phone')?.trim()   || '',
         tagline: fd.get('tagline')?.trim() || '',
+      },
+      blueprint: {
+        amountPerHour: Number(fd.get('amountPerHour') || 0),
       },
     });
     window.refreshSidebarProfile?.();  // reflect in sidebar immediately
@@ -355,6 +474,45 @@ function bindAll() {
       },
     });
     toast('Invoice defaults saved.', 'success');
+  });
+
+  // ── Blueprint terms save
+  _container.querySelector('#form-blueprint')?.addEventListener('submit', (e) => {
+    e.preventDefault();
+    const fd = new FormData(e.target);
+    saveSettings({
+      blueprint: {
+        terms: fd.get('blueprintTerms')?.trim() || '',
+      },
+    });
+    toast('Blueprint settings saved.', 'success');
+  });
+
+  // ── Default features add / edit / delete
+  _container.querySelector('#sdf-add')?.addEventListener('click', () => showDefaultFeatureForm(null));
+
+  _container.querySelector('#sdf-list')?.addEventListener('click', e => {
+    const editBtn   = e.target.closest('[data-sdf-edit]');
+    const deleteBtn = e.target.closest('[data-sdf-delete]');
+    if (editBtn) {
+      showDefaultFeatureForm(Number(editBtn.dataset.sdfEdit));
+    } else if (deleteBtn) {
+      const idx  = Number(deleteBtn.dataset.sdfDelete);
+      const list = getSettings().defaultFeatures ?? [];
+      const name = list[idx]?.name ?? 'this feature';
+      openConfirm({
+        title:        'Delete Default Feature?',
+        message:      `"${name}" will be removed from your preset list. Existing blueprint features are not affected.`,
+        confirmLabel: 'Delete',
+        onConfirm:    () => {
+          const updated = [...list];
+          updated.splice(idx, 1);
+          saveSettings({ defaultFeatures: updated });
+          renderDefaultFeaturesList(updated);
+          toast('Default feature deleted.', 'info');
+        },
+      });
+    }
   });
 
   // ── Category add buttons
@@ -478,9 +636,9 @@ function shellHTML() {
                      placeholder="e.g. Mohammed Al-Fauzi" autocomplete="name"/>
             </div>
             <div>
-              <label class="form-label" for="sp-company">Company / Brand</label>
-              <input id="sp-company" name="company" type="text" class="form-input"
-                     placeholder="e.g. QFL Studio" autocomplete="organization"/>
+              <label class="form-label" for="sb-bp-hourly">Default Amount per Hour (QAR)</label>
+              <input id="sb-bp-hourly" name="amountPerHour" type="number" min="0" step="0.01"
+                     class="form-input" placeholder="e.g. 150"/>
             </div>
           </div>
 
@@ -538,8 +696,46 @@ function shellHTML() {
         </form>
       </div>
 
-      <!-- ═══════════════════════════════════════════════════════════
-           SECTION 3 — Project Categories
+      <!-- ═══════════════════════════════════════════════════════════           SECTION: Blueprint / Proposal
+      ═════════════════════════════════════════════════════ -->
+      <div class="card p-6">
+        <h3 class="text-base font-semibold text-[var(--clr-text)] mb-1">Blueprint / Proposal</h3>
+        <p class="text-sm text-[var(--clr-text-faint)] mb-5">Terms of Agreement printed at the bottom of every Project Blueprint PDF.</p>
+
+        <form id="form-blueprint" novalidate class="space-y-4">
+          <div>
+            <label class="form-label" for="sb-bp-terms">Terms of Agreement</label>
+            <textarea id="sb-bp-terms" name="blueprintTerms" class="form-textarea" rows="6"
+                      placeholder="Enter your standard terms and conditions..."></textarea>
+            <p class="text-xs mt-1.5" style="color:var(--clr-text-faint)">
+              These terms appear verbatim at the bottom of every exported Blueprint PDF. Newlines are preserved.
+            </p>
+          </div>
+          <div class="flex justify-end pt-1">
+            <button type="submit" class="btn btn-primary">Save Terms</button>
+          </div>
+        </form>
+      </div>
+
+      <!-- ═══════════════════════════════════════════════════════════           SECTION: Default Features / Services
+      ═════════════════════════════════════════════════════ -->
+      <div class="card p-6">
+        <div class="flex items-center justify-between flex-wrap gap-3 mb-5">
+          <div>
+            <h3 class="text-base font-semibold text-[var(--clr-text)] mb-1">Default Features / Services</h3>
+            <p class="text-sm text-[var(--clr-text-faint)]">Preset features you can instantly load when adding items to a Project Blueprint.</p>
+          </div>
+          <button id="sdf-add" class="btn btn-secondary flex items-center gap-2 text-sm shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+            </svg>
+            Add Feature
+          </button>
+        </div>
+        <div id="sdf-list"></div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════           SECTION 3 — Project Categories
       ════════════════════════════════════════════════════════════ -->
       ${categorySection({
         id:          'project',

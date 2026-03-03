@@ -25,6 +25,12 @@ export const DEFAULTS = {
     prefix:       'INV-',
     paymentTerms: 'Payment is due within 30 days of the invoice date.',
   },
+  blueprint: {
+    terms: 'All deliverables remain the property of the service provider until full payment is received.\nRevision rounds are limited to those specified in the agreed scope.\nAny changes outside the agreed scope will be quoted separately.\nProject timelines are estimates and may vary based on client feedback turnaround.\nThis proposal is valid for 30 days from the date issued.',
+    amountPerHour: 0,
+  },
+  // Array of { id, name, details, price } preset features available in blueprints
+  defaultFeatures: [],
   categories: {
     project: [
       'Web Design', 'Mobile App', 'Branding', 'Consulting',

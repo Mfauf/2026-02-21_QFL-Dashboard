@@ -13,10 +13,11 @@
  */
 
 import { addRecord, getAllRecords, getByIndex, updateRecord, deleteRecord } from '../db.js';
-import { toast, openModal, openConfirm }                       from '../ui.js';
+import { toast, openModal, closeModal, openConfirm }            from '../ui.js';
 import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce } from '../utils.js';
 import { getSettings }                                         from '../settings-store.js';
 import { navigate }                                            from '../router.js';
+import { printBlueprint }                                      from '../blueprint-pdf.js';
 
 /* ── Module state ───────────────────────────────────────────────────────── */
 let _projects          = [];   // all projects from DB
@@ -28,20 +29,53 @@ let _dateRange         = 'all';    // 'all' | 'last-month' | 'last-year'
 let _currentProjectId  = null;     // id of the project whose detail view is open
 let _milestones        = [];       // milestones for the current project
 let _sessions          = [];       // time-tracking sessions for the current project
-let _timerState          = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
+// Map<projectId, { status, startedAt, accumulatedMs, intervalId, projectName }>
+let _timerStates         = new Map();
 let _collapsedMilestones = new Set(); // string milestone IDs whose sessions panel is collapsed
-let _timerProjectName    = '';        // project name captured when timer starts (for notif panel)
+let _blueprintFeatures   = [];        // blueprint features for the current project
+let _currentView         = 'list';    // 'list' | 'detail' | 'blueprint'
+let _projectEnrichments  = new Map(); // projectId → { bpAmount, trackedHours } for list view
 
-/* ── Timer event helper ───────────────────────────────────────────── */
+/* ── Timer event helper
+   Plays a slide-in animation on the container element between sub-views.
+───────────────────────────────────────────────────────────────*/
+function animateIn(el) {
+  if (!el) return;
+  el.classList.remove('qfl-slide-in');
+  void el.offsetWidth; // reflow
+  el.classList.add('qfl-slide-in');
+  el.addEventListener('animationend', () => el.classList.remove('qfl-slide-in'), { once: true });
+}
+
+/* ── Timer helpers ────────────────────────────────────────────────── */
+function getTimerState(pid) {
+  if (!_timerStates.has(pid)) {
+    _timerStates.set(pid, { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null, projectName: '' });
+  }
+  return _timerStates.get(pid);
+}
+
+function getElapsedMs(pid) {
+  const t = _timerStates.get(pid);
+  if (!t) return 0;
+  if (t.status === 'running' && t.startedAt) {
+    return t.accumulatedMs + (Date.now() - t.startedAt.getTime());
+  }
+  return t.accumulatedMs;
+}
+
+function allActiveTimers() {
+  const result = [];
+  for (const [pid, t] of _timerStates) {
+    if (t.status !== 'idle') {
+      result.push({ projectId: pid, projectName: t.projectName, status: t.status, elapsed: getElapsedMs(pid) });
+    }
+  }
+  return result;
+}
+
 function dispatchTimerEvent(eventName) {
-  window.dispatchEvent(new CustomEvent(eventName, {
-    detail: {
-      status:      _timerState.status,
-      elapsed:     getElapsedMs(),
-      projectName: _timerProjectName,
-      projectId:   _currentProjectId,
-    },
-  }));
+  window.dispatchEvent(new CustomEvent(eventName, { detail: { allTimers: allActiveTimers() } }));
 }
 
 /* ── Project status config ──────────────────────────────────────────────── */
@@ -53,21 +87,28 @@ const STATUSES = [
 ];
 
 /* ── Mount / unmount ────────────────────────────────────────────────────── */
-export async function mount(container) {
+export async function mount(container, params = {}) {
   _container = container;
 
-  // If a timer is already running/paused, preserve the project context so the
-  // user returns straight to the detail view they left. Otherwise do a full reset.
-  const timerIsActive = _timerState.status !== 'idle';
-  if (!timerIsActive) {
-    _currentProjectId    = null;
-    _milestones          = [];
-    _sessions            = [];
-    _timerState          = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
-    _timerProjectName    = '';
+  if (params.id) {
+    // Arrived via a direct URL route: #project/:id  or  #project/:id/blueprint
+    const id = Number(params.id);
+    _currentProjectId = id;
+    _currentView      = params.blueprint ? 'blueprint' : 'detail';
     _collapsedMilestones.clear();
+    _filter    = 'all';
+    _searchQ   = '';
+    _dateRange = 'all';
+    await loadProjects();
+    return;
   }
 
+  // ── List view ─────────────────────────────────────────────────────────
+  _currentProjectId = null;
+  _milestones       = [];
+  _sessions         = [];
+  _currentView      = 'list';
+  _collapsedMilestones.clear();
   _filter    = 'all';
   _searchQ   = '';
   _dateRange = 'all';
@@ -78,12 +119,8 @@ export async function mount(container) {
 }
 
 export function unmount() {
-  // Keep the timer interval alive when running/paused — the notification panel
-  // will continue receiving qfl:timer-tick events while the user is on other pages.
-  // The interval callbacks are null-safe when _container is null.
-  if (_timerState.status === 'idle' && _timerState.intervalId) {
-    clearInterval(_timerState.intervalId);
-  }
+  // Keep ALL timer intervals alive — they'll keep firing qfl:timer-tick for the notif panel.
+  // The display-update path is null-safe when _container is null.
   _container = null;
 }
 
@@ -95,27 +132,69 @@ async function loadProjects() {
       getAllRecords('clients'),
     ]);
 
-    // If a detail view is open, re-render it; fall back to list if project was deleted
+    // If a detail or blueprint view is active, re-render it; fall back to list if deleted
     if (_currentProjectId !== null) {
       const project = _projects.find(p => p.id === _currentProjectId);
       if (project) {
-        _milestones = await loadMilestones(_currentProjectId);
-        _sessions   = await loadSessions(_currentProjectId);
-        _container.innerHTML = detailHTML(project);
-        renderMilestones();
-        bindDetailListeners();
+        const titleEl = document.getElementById('page-title');
+        if (_currentView === 'blueprint') {
+          _blueprintFeatures = await loadBlueprintFeatures(_currentProjectId);
+          const bpClient = _clients.find(c => c.id === Number(project.clientId)) ?? null;
+          const terms    = getSettings().blueprint?.terms ?? '';
+          _container.innerHTML = blueprintViewHTML(project, bpClient?.name ?? '\u2014', terms);
+          renderBlueprintFeatures();
+          bindBlueprintListeners(_container, project, bpClient);
+          if (titleEl) titleEl.textContent = 'Blueprint';
+        } else {
+          _milestones         = await loadMilestones(_currentProjectId);
+          _sessions           = await loadSessions(_currentProjectId);
+          _blueprintFeatures  = await loadBlueprintFeatures(_currentProjectId);
+          _container.innerHTML = detailHTML(project);
+          renderMilestones();
+          bindDetailListeners();
+          animateIn(_container);
+          if (titleEl) titleEl.textContent = project.name;
+        }
         return;
       }
       // Project was deleted — fall back to list
       _currentProjectId = null;
-      _milestones = [];
-      _sessions   = [];
-      if (_timerState.intervalId) clearInterval(_timerState.intervalId);
-      _timerState = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
+      _milestones       = [];
+      _sessions         = [];
+      _currentView      = 'list';
+      // Leave any running timers intact — they belong to other projects.
+      const titleEl2 = document.getElementById('page-title');
+      if (titleEl2) titleEl2.textContent = 'Projects';
       _container.innerHTML = shellHTML();
       bindListeners();
     }
     renderStats();
+    // Pre-compute blueprint amount + tracked hours for every project so rowHTML can show fallbacks
+    try {
+      const [allFeatures, allSessions] = await Promise.all([
+        getAllRecords('blueprintFeatures'),
+        getAllRecords('sessions'),
+      ]);
+      const hourlyRate = Number(getSettings().blueprint?.amountPerHour || 0);
+      _projectEnrichments.clear();
+      for (const p of _projects) {
+        const bpTotal      = allFeatures
+          .filter(f => f.projectId === p.id)
+          .reduce((s, f) => s + Number(f.price || 0), 0);
+        const trackedSecs  = allSessions
+          .filter(s => s.projectId === p.id)
+          .reduce((s, sess) => s + Number(sess.durationSeconds || 0), 0);
+        const trackedHours = trackedSecs > 0 ? trackedSecs / 3600 : null;
+        const effHours     = Number(p.hours) || trackedHours || null;
+        const hourlyAmount = (!Number(p.amount) && bpTotal === 0 && hourlyRate > 0 && effHours)
+          ? hourlyRate * effHours : null;
+        _projectEnrichments.set(p.id, {
+          bpAmount:      bpTotal > 0 ? bpTotal : null,
+          trackedHours,
+          hourlyAmount,
+        });
+      }
+    } catch (_) { /* enrichment is best-effort */ }
     renderTable(applyFilters());
   } catch (err) {
     console.error('[Projects] Load error:', err);
@@ -219,15 +298,24 @@ function renderTable(projects) {
 
   // Bind row action buttons
   tbody.querySelectorAll('[data-action="create-invoice"]').forEach(btn => {
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const p = _projects.find(pr => pr.id === Number(btn.dataset.id));
       if (!p) return;
+      let amount = p.amount ?? '';
+      let notes  = p.notes  ?? '';
+      try {
+        const features = await getByIndex('blueprintFeatures', 'projectId', p.id);
+        if (features && features.length) {
+          const total = features.reduce((s, f) => s + Number(f.price || 0), 0);
+          if (total) amount = total;
+        }
+      } catch (_) { /* fall through to project defaults */ }
       sessionStorage.setItem('qfl_invoice_prefill', JSON.stringify({
-        clientId:  p.clientId  ?? null,
+        clientId:  p.clientId ?? null,
         projectId: p.id,
-        amount:    p.amount    ?? '',
-        notes:     p.notes     ?? '',
-        dueAt:     p.endDate   ?? '',
+        amount,
+        notes,
+        dueAt:     p.endDate ?? '',
       }));
       navigate('invoices');
     });
@@ -277,6 +365,22 @@ function rowHTML(p) {
   const overdue = p.endDate && p.status !== 'complete' && p.status !== 'cancelled'
                   && new Date(p.endDate) < new Date();
 
+  const enrich       = _projectEnrichments.get(p.id) ?? {};
+  const hasAmount    = Number(p.amount) > 0;
+  const hasHours     = Number(p.hours)  > 0;
+  const effAmount    = hasAmount ? Number(p.amount) : (enrich.bpAmount ?? enrich.hourlyAmount ?? null);
+  const effHours     = hasHours ? Number(p.hours)   : (enrich.trackedHours ?? null);
+  const amountFromBP     = !hasAmount && enrich.bpAmount      != null;
+  const amountFromHourly = !hasAmount && enrich.bpAmount      == null && enrich.hourlyAmount != null;
+  const hoursTracked     = !hasHours  && enrich.trackedHours  != null;
+
+  const amountCell = effAmount != null
+    ? `<span>${formatQAR(effAmount)}</span>${amountFromBP ? '<br><span style="font-size:.65rem;opacity:.65">(blueprint)</span>' : amountFromHourly ? '<br><span style="font-size:.65rem;opacity:.65">(hourly rate)</span>' : ''}`
+    : '—';
+  const hoursCell  = effHours != null
+    ? `<span>${effHours % 1 === 0 ? effHours.toLocaleString() : effHours.toFixed(1)} hrs</span>${hoursTracked ? '<br><span style="font-size:.65rem;opacity:.65">(tracked)</span>' : ''}`
+    : '—';
+
   return `
     <tr class="border-b border-[var(--clr-border)] last:border-0 transition-colors duration-150 cursor-pointer group"
         data-project-id="${p.id}"
@@ -295,13 +399,15 @@ function rowHTML(p) {
       <td class="td-cell hidden md:table-cell text-sm text-[var(--clr-text-muted)]">${client}</td>
 
       <!-- Amount -->
-      <td class="td-cell hidden sm:table-cell text-sm font-medium text-[var(--clr-text)] text-right tabular-nums whitespace-nowrap">
-        ${p.amount ? formatQAR(Number(p.amount)) : '—'}
+      <td class="td-cell hidden sm:table-cell text-sm font-medium text-right tabular-nums whitespace-nowrap leading-tight"
+          style="color:${amountFromBP ? 'var(--clr-primary-light)' : 'var(--clr-text)'}">
+        ${amountCell}
       </td>
 
       <!-- Hours -->
-      <td class="td-cell hidden lg:table-cell text-sm text-[var(--clr-text-muted)] text-right tabular-nums whitespace-nowrap">
-        ${p.hours ? `${Number(p.hours).toLocaleString()} hrs` : '—'}
+      <td class="td-cell hidden lg:table-cell text-sm text-right tabular-nums whitespace-nowrap leading-tight"
+          style="color:${hoursTracked ? 'var(--clr-primary-light)' : 'var(--clr-text-muted)'}">
+        ${hoursCell}
       </td>
 
       <!-- Start date -->
@@ -359,21 +465,12 @@ function rowHTML(p) {
 
 /* ── Detail view ────────────────────────────────────────────────────────── */
 
-async function openDetailView(id) {
-  _currentProjectId = id;
-  _collapsedMilestones.clear(); // reset collapse state when switching to a different project
-  await loadProjects();
+function openDetailView(id) {
+  navigate('project/' + id);
 }
 
-async function showListView() {
-  // Preserve the timer — do NOT clear it when going back to the list.
-  // The active timer continues in the background (interval + events keep firing).
-  _currentProjectId = null;
-  _milestones       = [];
-  _sessions         = [];
-  _container.innerHTML = shellHTML();
-  bindListeners();
-  await loadProjects();
+function showListView() {
+  navigate('projects');
 }
 
 function detailHTML(project) {
@@ -414,6 +511,17 @@ function detailHTML(project) {
             </svg>
             Invoice
           </button>
+          <button id="btn-detail-blueprint"
+                  class="btn btn-ghost flex items-center gap-2 text-sm"
+                  title="Open Project Blueprint / Proposal">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2
+                   M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2
+                   m-6 9l2 2 4-4"/>
+            </svg>
+            Blueprint
+          </button>
           <button id="btn-detail-edit"
                   class="btn btn-secondary flex items-center gap-2 text-sm">
             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -437,21 +545,43 @@ function detailHTML(project) {
       </div>
 
       <!-- Info grid -->
+      ${(() => {
+        // Auto-compute amount from blueprint features if project.amount is empty
+        const bpTotal         = _blueprintFeatures.reduce((s, f) => s + Number(f.price || 0), 0);
+        const hourlyRate      = Number(getSettings().blueprint?.amountPerHour || 0);
+
+        // Auto-compute hours from tracked sessions if project.hours is empty
+        const trackedSeconds  = _sessions.reduce((s, sess) => s + Number(sess.durationSeconds || 0), 0);
+        const trackedHours    = trackedSeconds / 3600;
+        const effectiveHours  = Number(project.hours) || (trackedSeconds > 0 ? trackedHours : null);
+        const hoursTracked    = !Number(project.hours) && trackedSeconds > 0;
+
+        const hourlyAmount    = (!Number(project.amount) && bpTotal === 0 && hourlyRate > 0 && effectiveHours)
+          ? hourlyRate * effectiveHours : null;
+        const effectiveAmount = Number(project.amount) || bpTotal || hourlyAmount || null;
+        const amountFromBP      = !Number(project.amount) && bpTotal > 0;
+        const amountFromHourly  = !Number(project.amount) && !bpTotal && hourlyAmount != null;
+
+        const amountLabel = effectiveAmount
+          ? `${formatQAR(effectiveAmount)} <span style="font-size:.65rem;opacity:.7;display:block;margin-top:.1rem">${amountFromBP ? '(from blueprint)' : amountFromHourly ? '(hourly rate)' : ''}</span>`
+          : '—';
+        const amountColor = (amountFromBP || amountFromHourly) ? 'var(--clr-primary-light)' : null;
+        const hoursLabel  = hoursTracked
+          ? `${effectiveHours % 1 === 0 ? effectiveHours.toLocaleString() : effectiveHours.toFixed(1)} hrs <span style="font-size:.65rem;opacity:.7;display:block;margin-top:.1rem">(tracked)</span>`
+          : (effectiveHours ? `${Number(project.hours).toLocaleString()} hrs` : '—');
+
+        return `
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6 pt-6
                   border-t border-[var(--clr-border)]">
         ${detailField('Client',     client || '—')}
-        ${detailField('Amount',     project.amount ? formatQAR(Number(project.amount)) : '—')}
-        ${detailField('Hours',      project.hours  ? `${Number(project.hours).toLocaleString()} hrs` : '—')}
+        ${detailField('Amount',     amountLabel,  amountColor)}
+        ${detailField('Hours',      hoursLabel,   hoursTracked  ? 'var(--clr-primary-light)' : null)}`;
+      })()}
         ${detailField('Start Date', formatDate(project.startDate))}
         ${detailField('Due Date',   formatDate(project.endDate), overdue ? 'var(--clr-danger)' : null, overdue)}
         ${detailField('Added',      formatDate(project.createdAt?.slice(0, 10)))}
       </div>
 
-      ${project.notes ? `
-        <div class="mt-5 pt-5 border-t border-[var(--clr-border)]">
-          <p class="text-xs font-semibold uppercase tracking-wider text-[var(--clr-text-muted)] mb-2">Notes</p>
-          <p class="text-sm text-[var(--clr-text-muted)] whitespace-pre-wrap">${escapeHtml(project.notes)}</p>
-        </div>` : ''}
     </div>
 
     <!-- Milestones & Time card -->
@@ -499,25 +629,35 @@ function bindDetailListeners() {
     if (p) confirmDelete(_currentProjectId, p.name);
   });
 
-  _container.querySelector('#btn-detail-create-invoice')?.addEventListener('click', () => {
+  _container.querySelector('#btn-detail-create-invoice')?.addEventListener('click', async () => {
     const p = _projects.find(x => x.id === _currentProjectId);
     if (!p) return;
+    let amount = p.amount ?? '';
+    let notes  = p.notes  ?? '';
+    try {
+      const features = await getByIndex('blueprintFeatures', 'projectId', p.id);
+      if (features && features.length) {
+        const total = features.reduce((s, f) => s + Number(f.price || 0), 0);
+        if (total) amount = total;
+      }
+    } catch (_) { /* fall through to project defaults */ }
     sessionStorage.setItem('qfl_invoice_prefill', JSON.stringify({
       clientId:  p.clientId ?? null,
       projectId: p.id,
-      amount:    p.amount   ?? '',
-      notes:     p.notes    ?? '',
-      dueAt:     p.endDate  ?? '',
+      amount,
+      notes,
+      dueAt:     p.endDate ?? '',
     }));
     navigate('invoices');
   });
 
-  // Initialise timer controls
+  _container.querySelector('#btn-detail-blueprint')
+    ?.addEventListener('click', () => openBlueprintView());
+
+  // Initialise timer controls for the current project
   renderTimerControls();
-  // Re-register global controls so notif-panel pause/stop buttons work from any page
-  if (_timerState.status !== 'idle') {
-    window._qflTimerControls = { pause: pauseTimer, resume: resumeTimer, stop: () => stopTimer() };
-  }
+  // Re-register this project's controls in the global map
+  _registerTimerControls(_currentProjectId);
 }
 
 /* ── Milestones ─────────────────────────────────────────────────────────── */
@@ -870,21 +1010,23 @@ function formatDurationShort(seconds) {
   return `${s}s`;
 }
 
-function getElapsedMs() {
-  if (_timerState.status === 'running' && _timerState.startedAt) {
-    return _timerState.accumulatedMs + (Date.now() - _timerState.startedAt.getTime());
-  }
-  return _timerState.accumulatedMs;
-}
-
 /* ── Timer controls ─────────────────────────────────────────────────────── */
+
+function _registerTimerControls(pid) {
+  if (!window._qflAllTimerControls) window._qflAllTimerControls = new Map();
+  window._qflAllTimerControls.set(pid, {
+    pause:  () => _pauseTimerById(pid),
+    resume: () => _resumeTimerById(pid),
+    stop:   () => _stopTimerById(pid),
+  });
+}
 
 function renderTimerControls() {
   const el = _container?.querySelector('#timer-controls');
   if (!el) return;
-  // Always a flex row so all controls sit on one line
   el.style.cssText = 'display:flex;align-items:center;gap:6px;flex-wrap:nowrap';
-  const { status } = _timerState;
+  const pid    = _currentProjectId;
+  const status = pid ? (getTimerState(pid).status) : 'idle';
 
   if (status === 'idle') {
     el.innerHTML = `
@@ -896,7 +1038,7 @@ function renderTimerControls() {
         Start Timer
       </button>`;
   } else {
-    const elapsed  = getElapsedMs();
+    const elapsed  = getElapsedMs(pid);
     const isPaused = status === 'paused';
     el.innerHTML = `
       <span id="timer-display"
@@ -924,66 +1066,86 @@ function renderTimerControls() {
       </button>`;
   }
 
-  el.querySelector('#btn-timer-start')?.addEventListener('click',  startTimer);
-  el.querySelector('#btn-timer-pause')?.addEventListener('click',  pauseTimer);
-  el.querySelector('#btn-timer-resume')?.addEventListener('click', resumeTimer);
-  el.querySelector('#btn-timer-stop')?.addEventListener('click',   () => stopTimer());
+  el.querySelector('#btn-timer-start') ?.addEventListener('click', () => _startTimer());
+  el.querySelector('#btn-timer-pause') ?.addEventListener('click', () => _pauseTimerById(_currentProjectId));
+  el.querySelector('#btn-timer-resume')?.addEventListener('click', () => _resumeTimerById(_currentProjectId));
+  el.querySelector('#btn-timer-stop')  ?.addEventListener('click', () => _stopTimerById(_currentProjectId));
 }
 
-function updateTimerDisplay() {
-  const el = _container?.querySelector('#timer-display');
-  if (el) el.textContent = formatDuration(getElapsedMs());
+function _updateTimerDisplay(pid) {
+  // Only update the DOM display if this project is currently in view
+  if (pid === _currentProjectId) {
+    const el = _container?.querySelector('#timer-display');
+    if (el) el.textContent = formatDuration(getElapsedMs(pid));
+  }
   dispatchTimerEvent('qfl:timer-tick');
 }
 
-function startTimer() {
-  const project = _projects.find(p => p.id === _currentProjectId);
-  _timerProjectName     = project?.name ?? 'Project';
-  _timerState.status    = 'running';
-  _timerState.startedAt = new Date();
-  _timerState.intervalId = setInterval(updateTimerDisplay, 1000);
+function _startTimer() {
+  const pid     = _currentProjectId;
+  const project = _projects.find(p => p.id === pid);
+  const t       = getTimerState(pid);
+  t.projectName  = project?.name ?? 'Project';
+  t.status       = 'running';
+  t.startedAt    = new Date();
+  t.intervalId   = setInterval(() => _updateTimerDisplay(pid), 1000);
   renderTimerControls();
-  window._qflTimerControls = { pause: pauseTimer, resume: resumeTimer, stop: () => stopTimer() };
+  _registerTimerControls(pid);
   dispatchTimerEvent('qfl:timer-updated');
   toast('Timer started.', 'info');
 }
 
-function pauseTimer() {
-  _timerState.accumulatedMs += Date.now() - _timerState.startedAt.getTime();
-  _timerState.startedAt = null;
-  _timerState.status    = 'paused';
-  clearInterval(_timerState.intervalId);
-  _timerState.intervalId = null;
-  renderTimerControls();
+function _pauseTimerById(pid) {
+  const t = _timerStates.get(pid);
+  if (!t || t.status !== 'running') return;
+  t.accumulatedMs += Date.now() - t.startedAt.getTime();
+  t.startedAt     = null;
+  t.status        = 'paused';
+  clearInterval(t.intervalId);
+  t.intervalId    = null;
+  if (pid === _currentProjectId) renderTimerControls();
   dispatchTimerEvent('qfl:timer-updated');
 }
 
-function resumeTimer() {
-  _timerState.status    = 'running';
-  _timerState.startedAt = new Date();
-  _timerState.intervalId = setInterval(updateTimerDisplay, 1000);
-  renderTimerControls();
+function _resumeTimerById(pid) {
+  const t = _timerStates.get(pid);
+  if (!t || t.status !== 'paused') return;
+  t.status     = 'running';
+  t.startedAt  = new Date();
+  t.intervalId = setInterval(() => _updateTimerDisplay(pid), 1000);
+  if (pid === _currentProjectId) renderTimerControls();
   dispatchTimerEvent('qfl:timer-updated');
 }
 
-async function stopTimer() {
-  const totalMs = getElapsedMs();
-  clearInterval(_timerState.intervalId);
-  _timerState = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
+async function _stopTimerById(pid) {
+  const t       = _timerStates.get(pid);
+  if (!t || t.status === 'idle') return;
+  const totalMs = getElapsedMs(pid);
+  clearInterval(t.intervalId);
+  _timerStates.delete(pid);
+  if (window._qflAllTimerControls) window._qflAllTimerControls.delete(pid);
+
+  if (pid === _currentProjectId) renderTimerControls();
+  dispatchTimerEvent('qfl:timer-updated');
 
   if (totalMs < 1000) {
-    renderTimerControls();
     toast('Session too short to save (< 1 second).', 'info');
     return;
   }
 
   const durationSeconds = Math.floor(totalMs / 1000);
-  const sessionNumber   = _sessions.length + 1;
-  const name            = `Session ${sessionNumber}`;
 
-  // Attach to the last INCOMPLETE milestone — completed milestones no longer collect sessions
-  const incompleteMs = _milestones.filter(m => !m.completed);
-  const lastMilestone = incompleteMs.length
+  // Load milestones + sessions for this project (may differ from _currentProjectId)
+  const [milestones, sessionsForPid] = await Promise.all([
+    loadMilestones(pid),
+    loadSessions(pid),
+  ]);
+
+  const sessionNumber  = sessionsForPid.length + 1;
+  const name           = `Session ${sessionNumber}`;
+
+  const incompleteMs   = milestones.filter(m => !m.completed);
+  const lastMilestone  = incompleteMs.length
     ? incompleteMs.reduce((latest, m) => (m.createdAt > latest.createdAt ? m : latest), incompleteMs[0])
     : null;
 
@@ -991,22 +1153,385 @@ async function stopTimer() {
   const startedAt = new Date(Date.now() - totalMs).toISOString();
 
   await addRecord('sessions', {
-    projectId:       _currentProjectId,
-    milestoneId:     lastMilestone?.id ?? null,
+    projectId:   pid,
+    milestoneId: lastMilestone?.id ?? null,
     name,
     durationSeconds,
     startedAt,
     endedAt,
   });
 
-  _sessions = await loadSessions(_currentProjectId);
-  // Auto-expand the milestone that just received this session (remove from collapsed set)
-  if (lastMilestone) _collapsedMilestones.delete(String(lastMilestone.id));
-  window._qflTimerControls = null;
-  window.dispatchEvent(new CustomEvent('qfl:timer-stopped'));
-  renderTimerControls();
-  renderMilestones();
+  // If this is the active detail view, refresh cached data + UI
+  if (pid === _currentProjectId) {
+    _sessions = await loadSessions(pid);
+    if (lastMilestone) _collapsedMilestones.delete(String(lastMilestone.id));
+    renderMilestones();
+  }
+
+  // Fire stopped event carrying remaining active timers
+  window.dispatchEvent(new CustomEvent('qfl:timer-stopped', { detail: { allTimers: allActiveTimers() } }));
   toast(`${name} saved — ${formatDurationShort(durationSeconds)}.`, 'success');
+}
+
+/* ── Blueprint ───────────────────────────────────────────────────────────── */
+
+async function loadBlueprintFeatures(projectId) {
+  const all = await getByIndex('blueprintFeatures', 'projectId', projectId);
+  return all.sort((a, b) => ((a.sortOrder ?? 0) - (b.sortOrder ?? 0)) || a.createdAt.localeCompare(b.createdAt));
+}
+
+function openBlueprintView() {
+  navigate('project/' + _currentProjectId + '/blueprint');
+}
+
+function blueprintViewHTML(project, clientName, terms) {
+  const overdue = project.endDate && project.status !== 'complete' && project.status !== 'cancelled'
+                  && new Date(project.endDate) < new Date();
+  return `
+    <!-- Blueprint header card -->
+    <div class="card p-6 mb-6">
+      <div class="flex items-center justify-between flex-wrap gap-4">
+        <div class="flex items-center gap-2 min-w-0">
+          <button id="bp-back" class="btn btn-icon shrink-0"
+                  title="Back to project" aria-label="Back to project">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 19l-7-7 7-7"/>
+            </svg>
+          </button>
+          <div class="min-w-0">
+            <h2 class="text-xl font-semibold text-[var(--clr-text)]">Project Blueprint</h2>
+            <p class="text-sm text-[var(--clr-text-faint)] mt-0.5 truncate">${escapeHtml(project.name)}</p>
+          </div>
+        </div>
+        <div class="flex items-center gap-2 flex-wrap">
+          <button id="btn-bp-create-invoice" class="btn btn-secondary flex items-center gap-2 text-sm shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293
+                   l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+            </svg>
+            Create Invoice
+          </button>
+          <button id="bp-export-pdf" class="btn btn-primary flex items-center gap-2 text-sm shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+              <path stroke-linecap="round" stroke-linejoin="round"
+                d="M17 17h2a2 2 0 002-2v-4a2 2 0 00-2-2H5a2 2 0 00-2 2v4a2 2 0 002 2h2
+                   m2 4h6a2 2 0 002-2v-4a2 2 0 00-2-2H9a2 2 0 00-2 2v4a2 2 0 002 2zm1-4h.01"/>
+            </svg>
+            Export PDF
+          </button>
+        </div>
+      </div>
+
+      <!-- Details grid — no Status -->
+      <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-6 pt-6
+                  border-t border-[var(--clr-border)]">
+        ${detailField('Client',     clientName || '—')}
+        ${detailField('Amount',     project.amount ? formatQAR(Number(project.amount)) : '—')}
+        ${detailField('Hours',      project.hours  ? `${Number(project.hours).toLocaleString()} hrs` : '—')}
+        ${detailField('Start Date', formatDate(project.startDate))}
+        ${detailField('Due Date',   formatDate(project.endDate), overdue ? 'var(--clr-danger)' : null, overdue)}
+      </div>
+    </div>
+
+    <!-- Project Description card -->
+    <div class="card p-6 mb-6">
+      <div class="flex items-start justify-between gap-4 mb-3">
+        <div>
+          <h3 class="font-semibold text-[var(--clr-text)]">Project Description</h3>
+          <p class="text-xs text-[var(--clr-text-faint)] mt-0.5">Scope, objectives and details for this proposal</p>
+        </div>
+        <span id="bp-desc-status" class="text-xs text-[var(--clr-text-faint)] mt-1 shrink-0"></span>
+      </div>
+      <textarea id="bp-description"
+                class="form-input w-full"
+                rows="5"
+                placeholder="Describe the project scope, goals, and deliverables…"
+                style="resize:vertical;line-height:1.65">${escapeHtml(project.blueprintDescription ?? '')}</textarea>
+    </div>
+
+    <!-- Features & Services card -->
+    <div class="card p-6 mb-6">
+      <div class="flex items-center justify-between mb-5 flex-wrap gap-3">
+        <div>
+          <h3 class="font-semibold text-[var(--clr-text)]">Features &amp; Services</h3>
+          <p class="text-xs text-[var(--clr-text-faint)] mt-0.5">Deliverables included in this proposal</p>
+        </div>
+        <button id="bp-add-feature" class="btn btn-secondary flex items-center gap-2 text-sm">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4"/>
+          </svg>
+          Add Feature
+        </button>
+      </div>
+      <div id="bp-features-table"></div>
+    </div>
+
+    <!-- Terms of Agreement card -->
+    ${ terms.trim() ? `
+    <div class="card p-6">
+      <h3 class="font-semibold text-[var(--clr-text)] mb-1">Terms of Agreement</h3>
+      <p class="text-xs text-[var(--clr-text-faint)] mb-4">
+        Edit in <strong>Settings → Blueprint / Proposal</strong>
+      </p>
+      <p class="text-sm text-[var(--clr-text-muted)] whitespace-pre-wrap leading-relaxed">${escapeHtml(terms)}</p>
+    </div>` : `
+    <div class="card p-6 text-center">
+      <p class="text-sm text-[var(--clr-text-muted)]">No Terms of Agreement configured.</p>
+      <p class="text-xs text-[var(--clr-text-faint)] mt-1">
+        Go to <strong>Settings → Blueprint / Proposal</strong> to add standard terms.
+      </p>
+    </div>`}
+  `;
+}
+
+function renderBlueprintFeatures() {
+  const el = document.getElementById('bp-features-table');
+  if (!el) return;
+
+  if (!_blueprintFeatures.length) {
+    el.innerHTML = `
+      <div style="text-align:center;padding:2.5rem 0;color:var(--clr-text-faint)">
+        <svg style="width:36px;height:36px;margin:0 auto 10px;color:var(--clr-surface-3)"
+             fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2
+               M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/>
+        </svg>
+        <p style="font-size:13px;font-weight:500;color:var(--clr-text-muted)">No features yet</p>
+        <p style="font-size:12px;margin-top:4px">Click "Add Feature" to list deliverables and services.</p>
+      </div>`;
+    return;
+  }
+
+  const total = _blueprintFeatures.reduce((sum, f) => sum + (Number(f.price) || 0), 0);
+  el.innerHTML = `
+    <div style="border-radius:10px;overflow:hidden;border:1px solid var(--clr-border)">
+      <div style="display:grid;grid-template-columns:1.1fr 1.4fr 130px 70px;
+                  padding:8px 14px;background:var(--clr-surface-2);
+                  border-bottom:1px solid var(--clr-border);gap:8px">
+        <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+                     color:var(--clr-text-faint)">Feature / Service</span>
+        <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+                     color:var(--clr-text-faint)">Details</span>
+        <span style="font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;
+                     color:var(--clr-text-faint);text-align:right">Price</span>
+        <span></span>
+      </div>
+      ${_blueprintFeatures.map(f => blueprintFeatureRowHTML(f)).join('')}
+      ${total > 0 ? `
+        <div style="display:grid;grid-template-columns:1.1fr 1.4fr 130px 70px;
+                    padding:10px 14px;background:var(--clr-primary-dim);gap:8px;
+                    border-top:1px solid var(--clr-border)">
+          <span style="font-size:12px;font-weight:700;color:var(--clr-primary-light);
+                       grid-column:1/3">Total Estimate</span>
+          <span style="font-size:13px;font-weight:800;color:var(--clr-primary-light);
+                       text-align:right;font-variant-numeric:tabular-nums">
+            ${escapeHtml(formatQAR(total))}
+          </span>
+          <span></span>
+        </div>` : ''}
+    </div>`;
+
+  bindBlueprintFeatureRowListeners();
+}
+
+function blueprintFeatureRowHTML(f) {
+  return `
+    <div data-bp-feature-id="${f.id}"
+         style="display:grid;grid-template-columns:1.1fr 1.4fr 130px 70px;
+                align-items:center;padding:10px 14px;gap:8px;
+                border-bottom:1px solid var(--clr-border);transition:background 120ms ease"
+         onmouseenter="this.style.background='var(--clr-surface-2)'"
+         onmouseleave="this.style.background=''">
+      <span style="font-size:13px;font-weight:600;color:var(--clr-text)">
+        ${escapeHtml(f.name)}
+      </span>
+      <span style="font-size:12px;color:var(--clr-text-muted);overflow:hidden;
+                   text-overflow:ellipsis;white-space:nowrap" title="${escapeHtml(f.details || '')}">
+        ${escapeHtml(f.details || '—')}
+      </span>
+      <span style="font-size:13px;font-weight:600;color:var(--clr-text);text-align:right;
+                   font-variant-numeric:tabular-nums">
+        ${f.price ? escapeHtml(formatQAR(Number(f.price)))
+                  : '<span style="color:var(--clr-text-faint)">—</span>'}
+      </span>
+      <div style="display:flex;justify-content:flex-end;gap:2px">
+        <button class="btn btn-icon bp-edit-feature" data-id="${f.id}" title="Edit feature">
+          <svg style="width:12px;height:12px" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+            <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5"/>
+            <path d="M17.586 3.586a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+          </svg>
+        </button>
+        <button class="btn btn-icon bp-delete-feature"
+                data-id="${f.id}" data-name="${escapeHtml(f.name)}"
+                title="Delete feature" style="color:var(--clr-danger)">
+          <svg style="width:12px;height:12px" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round" viewBox="0 0 24 24">
+            <polyline points="3 6 5 6 21 6"/>
+            <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+            <path d="M10 11v6m4-6v6"/>
+            <path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+          </svg>
+        </button>
+      </div>
+    </div>`;
+}
+
+function bindBlueprintFeatureRowListeners() {
+  document.querySelectorAll('.bp-edit-feature').forEach(btn =>
+    btn.addEventListener('click', () => showBlueprintFeatureForm(Number(btn.dataset.id)))
+  );
+  document.querySelectorAll('.bp-delete-feature').forEach(btn =>
+    btn.addEventListener('click', () =>
+      confirmDeleteBlueprintFeature(Number(btn.dataset.id), btn.dataset.name)
+    )
+  );
+}
+
+function showBlueprintFeatureForm(editId = null) {
+  const f        = (editId != null) ? (_blueprintFeatures.find(x => x.id === editId) ?? {}) : {};
+  const defaults = getSettings().defaultFeatures ?? [];
+  const defaultPickerHTML = defaults.length ? `
+    <div>
+      <label class="form-label">Load from Default</label>
+      <select id="bp-f-default" class="form-input">
+        <option value="">— choose a preset —</option>
+        ${defaults.map((d, i) => `<option value="${i}">${escapeHtml(d.name)}${d.price != null && d.price !== '' ? ` — QAR ${Number(d.price).toLocaleString()}` : ''}</option>`).join('')}
+      </select>
+    </div>` : '';
+
+  openModal({
+    title:       editId != null ? 'Edit Feature' : 'Add Feature',
+    submitLabel: editId != null ? 'Save Changes' : 'Add Feature',
+    bodyHTML: `
+      <div class="space-y-4 px-6 py-5">
+        ${defaultPickerHTML}
+        <div>
+          <label class="form-label">
+            Feature / Service <span class="text-[var(--clr-danger)]">*</span>
+          </label>
+          <input id="bp-f-name" name="bp-f-name" class="form-input"
+                 value="${escapeHtml(f.name || '')}"
+                 placeholder="e.g. Mobile App Design">
+        </div>
+        <div>
+          <label class="form-label">Details</label>
+          <input id="bp-f-details" name="bp-f-details" class="form-input"
+                 value="${escapeHtml(f.details || '')}"
+                 placeholder="Brief description of scope">
+        </div>
+        <div>
+          <label class="form-label">
+            Price
+            <span class="text-xs font-normal text-[var(--clr-text-faint)] ml-1">(optional)</span>
+          </label>
+          <input id="bp-f-price" name="bp-f-price" class="form-input"
+                 type="number" min="0" step="0.01"
+                 value="${f.price ?? ''}" placeholder="0.00">
+        </div>
+      </div>`,
+    onSubmit: async () => {
+      const name     = document.getElementById('bp-f-name')?.value.trim();
+      const details  = document.getElementById('bp-f-details')?.value.trim() ?? '';
+      const priceRaw = document.getElementById('bp-f-price')?.value.trim();
+      if (!name) {
+        document.getElementById('bp-f-name')?.focus();
+        throw new Error('Feature / Service name is required.');
+      }
+      const price = priceRaw ? Number(priceRaw) : null;
+      if (editId != null) {
+        await updateRecord('blueprintFeatures', editId, { name, details, price });
+      } else {
+        await addRecord('blueprintFeatures', {
+          projectId: _currentProjectId,
+          name, details, price,
+          sortOrder: _blueprintFeatures.length,
+          createdAt: new Date().toISOString(),
+        });
+      }
+      _blueprintFeatures = await loadBlueprintFeatures(_currentProjectId);
+      renderBlueprintFeatures();
+    },
+  });
+
+  // openModal sets innerHTML synchronously — wire the preset picker right after
+  if (defaults.length) {
+    document.getElementById('bp-f-default')?.addEventListener('change', e => {
+      const idx = e.target.value;
+      if (idx === '') return;
+      const d = defaults[Number(idx)];
+      if (!d) return;
+      const nameEl   = document.getElementById('bp-f-name');
+      const detailEl = document.getElementById('bp-f-details');
+      const priceEl  = document.getElementById('bp-f-price');
+      if (nameEl)   nameEl.value   = d.name   ?? '';
+      if (detailEl) detailEl.value = d.details ?? '';
+      if (priceEl)  priceEl.value  = (d.price != null && d.price !== '') ? d.price : '';
+      nameEl?.focus();
+    });
+  }
+}
+
+async function confirmDeleteBlueprintFeature(id, name) {
+  openConfirm({
+    title:        'Delete Feature?',
+    message:      `"${name}" will be permanently removed from this blueprint.`,
+    confirmLabel: 'Delete',
+    onConfirm:    async () => {
+      await deleteRecord('blueprintFeatures', id);
+      _blueprintFeatures = await loadBlueprintFeatures(_currentProjectId);
+      renderBlueprintFeatures();
+    },
+  });
+}
+
+function bindBlueprintListeners(container, project, client) {
+  container.querySelector('#bp-back')
+    ?.addEventListener('click', () => openDetailView(_currentProjectId));
+
+  container.querySelector('#btn-bp-create-invoice')?.addEventListener('click', () => {
+    const total = _blueprintFeatures.reduce((sum, f) => sum + Number(f.price || 0), 0);
+    const desc  = (container.querySelector('#bp-description')?.value ?? project.blueprintDescription ?? '').trim();
+    sessionStorage.setItem('qfl_invoice_prefill', JSON.stringify({
+      clientId:  project.clientId ?? null,
+      projectId: project.id,
+      amount:    total || project.amount || '',
+      notes:     desc,
+      dueAt:     project.endDate ?? '',
+    }));
+    navigate('invoices');
+  });
+
+  container.querySelector('#bp-add-feature')
+    ?.addEventListener('click', () => showBlueprintFeatureForm(null));
+
+  container.querySelector('#bp-export-pdf')
+    ?.addEventListener('click', () => {
+      // Pass the live textarea value so the PDF always reflects the current text
+      const desc = container.querySelector('#bp-description')?.value ?? project.blueprintDescription ?? '';
+      printBlueprint({ ...project, blueprintDescription: desc }, client, _blueprintFeatures);
+    });
+
+  // Auto-save Project Description on blur
+  const descTA    = container.querySelector('#bp-description');
+  const descStatus = container.querySelector('#bp-desc-status');
+  let _descTimer  = null;
+  if (descTA) {
+    descTA.addEventListener('input', () => {
+      if (descStatus) descStatus.textContent = 'Unsaved…';
+      clearTimeout(_descTimer);
+      _descTimer = setTimeout(async () => {
+        const val = descTA.value.trim();
+        await updateRecord('projects', _currentProjectId, { blueprintDescription: val });
+        // Keep local project object in sync
+        const p = _projects.find(x => x.id === _currentProjectId);
+        if (p) p.blueprintDescription = val;
+        if (descStatus) { descStatus.textContent = 'Saved'; setTimeout(() => { descStatus.textContent = ''; }, 1500); }
+      }, 800);
+    });
+  }
 }
 
 /* ── Form HTML (shared by add + edit) ───────────────────────────────────── */

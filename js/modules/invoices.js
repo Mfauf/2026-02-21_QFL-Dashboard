@@ -11,7 +11,7 @@
  *  S — Search  : live search by number/client/project + status filter
  */
 
-import { addRecord, getAllRecords, updateRecord, deleteRecord } from '../db.js';
+import { addRecord, getAllRecords, getByIndex, updateRecord, deleteRecord } from '../db.js';
 import { toast, openModal, openConfirm }                       from '../ui.js';
 import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce } from '../utils.js';
 import { addNotification }                                     from '../notifications.js';
@@ -208,12 +208,16 @@ function renderTable(invoices) {
   tbody.innerHTML = invoices.map(inv => rowHTML(inv)).join('');
 
   tbody.querySelectorAll('[data-action="pdf"]').forEach(btn =>
-    btn.addEventListener('click', () => {
+    btn.addEventListener('click', async () => {
       const inv     = _invoices.find(i => i.id === Number(btn.dataset.id));
       if (!inv) return;
       const client  = _clients.find(c => c.id === Number(inv.clientId))  ?? null;
       const project = _projects.find(p => p.id === Number(inv.projectId)) ?? null;
-      const ok = printInvoice(inv, client, project);
+      let lineItems = [];
+      if (inv.projectId) {
+        try { lineItems = await getByIndex('blueprintFeatures', 'projectId', inv.projectId); } catch (_) {}
+      }
+      const ok = printInvoice(inv, client, project, lineItems);
       if (!ok) toast('Popup blocked — please allow popups for this site.', 'warning');
     })
   );

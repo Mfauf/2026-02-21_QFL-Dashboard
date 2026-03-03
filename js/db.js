@@ -11,10 +11,11 @@
  *  invoices     { id, clientId, projectId?, number, amount, issuedAt, dueAt, status, notes, createdAt }
  *  milestones   { id, projectId, name, completed, createdAt }
  *  sessions     { id, projectId, milestoneId|null, name, durationSeconds, startedAt, endedAt, createdAt }
+ *  blueprintFeatures { id, projectId, name, details, price, sortOrder, createdAt }
  */
 
 const DB_NAME    = 'QFLDashboard';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 
 /** @type {IDBDatabase|null} */
 let _db = null;
@@ -73,6 +74,12 @@ export function openDB() {
         const ss = db.createObjectStore('sessions', { keyPath: 'id', autoIncrement: true });
         ss.createIndex('projectId',   'projectId',   { unique: false });
         ss.createIndex('milestoneId', 'milestoneId', { unique: false });
+      }
+
+      // v5: project blueprint features/services
+      if (!db.objectStoreNames.contains('blueprintFeatures')) {
+        const bf = db.createObjectStore('blueprintFeatures', { keyPath: 'id', autoIncrement: true });
+        bf.createIndex('projectId', 'projectId', { unique: false });
       }
     };
 
