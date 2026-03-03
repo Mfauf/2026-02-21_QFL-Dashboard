@@ -28,7 +28,8 @@ let _dateRange         = 'all';    // 'all' | 'last-month' | 'last-year'
 let _currentProjectId  = null;     // id of the project whose detail view is open
 let _milestones        = [];       // milestones for the current project
 let _sessions          = [];       // time-tracking sessions for the current project
-let _timerState        = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
+let _timerState          = { status: 'idle', startedAt: null, accumulatedMs: 0, intervalId: null };
+let _collapsedMilestones = new Set(); // string milestone IDs whose sessions panel is collapsed
 
 /* ── Project status config ──────────────────────────────────────────────── */
 const STATUSES = [
@@ -333,6 +334,7 @@ function rowHTML(p) {
 
 async function openDetailView(id) {
   _currentProjectId = id;
+  _collapsedMilestones.clear(); // reset collapse state when switching to a different project
   await loadProjects();
 }
 
@@ -612,7 +614,18 @@ function renderMilestones() {
       const isHidden = pane.style.display === 'none';
       pane.style.display   = isHidden ? '' : 'none';
       if (chevron) chevron.style.transform = isHidden ? 'rotate(0deg)' : 'rotate(-90deg)';
+      // Persist so re-renders don't reset the state
+      if (isHidden) _collapsedMilestones.delete(id);
+      else          _collapsedMilestones.add(id);
     });
+  });
+
+  // Restore persisted collapsed state after each re-render
+  _collapsedMilestones.forEach(id => {
+    const pane    = el.querySelector(`[data-ms-sessions="${id}"]`);
+    const chevron = el.querySelector(`[data-chevron="${id}"]`);
+    if (pane)    pane.style.display        = 'none';
+    if (chevron) chevron.style.transform   = 'rotate(-90deg)';
   });
 }
 
@@ -951,6 +964,8 @@ async function stopTimer() {
   });
 
   _sessions = await loadSessions(_currentProjectId);
+  // Auto-expand the milestone that just received this session (remove from collapsed set)
+  if (lastMilestone) _collapsedMilestones.delete(String(lastMilestone.id));
   renderTimerControls();
   renderMilestones();
   toast(`${name} saved — ${formatDurationShort(durationSeconds)}.`, 'success');
