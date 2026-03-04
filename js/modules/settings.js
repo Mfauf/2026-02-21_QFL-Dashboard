@@ -869,7 +869,6 @@ function shellHTML() {
             Open this Settings page on <em>both</em> devices.
             Copy your ID from one device and paste it on the other, then press
             <strong style="color:var(--clr-text)">Sync Now</strong>.
-            Records are merged — newer data always wins. Nothing is deleted.
           </p>
         </div>
 

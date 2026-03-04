@@ -356,6 +356,7 @@
     import { initNotifications }                 from './js/notif-ui.js';
     import { watchSystemTheme }                  from './js/theme.js';
     import { getOrCreateUID, openPeer }           from './js/sync.js';
+    import { garbageCollect }                     from './js/db.js';
     import { mount as overviewMount }             from './js/modules/overview.js';
     import { mount as clientsMount,
              unmount as clientsUnmount }          from './js/modules/clients.js';
@@ -371,6 +372,9 @@
     /* Expose sidebar helpers to inline onclick attributes */
     window.openSidebar  = openSidebar;
     window.closeSidebar = closeSidebar;
+
+    /* Run garbage collection (at most once per 30 days — purges aged tombstones) */
+    garbageCollect().catch(err => console.warn('[GC] garbageCollect failed:', err));
 
     /* Date stamp in header */
     document.getElementById('current-date').textContent =
