@@ -127,9 +127,10 @@ function getStore(storeName, mode = 'readonly') {
  * @returns {Promise<number>} new record id
  */
 export async function addRecord(storeName, data) {
-  const db = await openDB();
+  const db  = await openDB();
   const store = db.transaction(storeName, 'readwrite').objectStore(storeName);
-  const record = { ...data, createdAt: new Date().toISOString() };
+  const now = new Date().toISOString();
+  const record = { ...data, createdAt: now, updatedAt: now, isDeleted: false };
   return promisify(store.add(record));
 }
 
@@ -152,11 +153,13 @@ export async function getRecord(storeName, id) {
 export async function getAllRecords(storeName) {
   const db = await openDB();
   const records = await promisify(db.transaction(storeName).objectStore(storeName).getAll());
-  // Sort newest first by createdAt (falls back to id desc)
-  return records.sort((a, b) => {
-    if (a.createdAt && b.createdAt) return b.createdAt.localeCompare(a.createdAt);
-    return (b.id ?? 0) - (a.id ?? 0);
-  });
+  // Filter out soft-deleted records, then sort newest first by createdAt
+  return records
+    .filter(r => !r.isDeleted)
+    .sort((a, b) => {
+      if (a.createdAt && b.createdAt) return b.createdAt.localeCompare(a.createdAt);
+      return (b.id ?? 0) - (a.id ?? 0);
+    });
 }
 
 /**
@@ -171,7 +174,7 @@ export async function updateRecord(storeName, id, updates) {
   const store = db.transaction(storeName, 'readwrite').objectStore(storeName);
   const existing = await promisify(store.get(id));
   if (!existing) throw new Error(`[DB] Record id=${id} not found in "${storeName}"`);
-  return promisify(store.put({ ...existing, ...updates, id }));
+  return promisify(store.put({ ...existing, ...updates, id, updatedAt: new Date().toISOString() }));
 }
 
 /**
@@ -181,9 +184,12 @@ export async function updateRecord(storeName, id, updates) {
  * @returns {Promise<void>}
  */
 export async function deleteRecord(storeName, id) {
-  const db = await openDB();
+  const db    = await openDB();
   const store = db.transaction(storeName, 'readwrite').objectStore(storeName);
-  return promisify(store.delete(id));
+  const existing = await promisify(store.get(id));
+  if (!existing) return;   // already gone — nothing to do
+  // Soft delete: keep the record so the tombstone propagates during sync
+  return promisify(store.put({ ...existing, id, isDeleted: true, updatedAt: new Date().toISOString() }));
 }
 
 /**
@@ -207,7 +213,74 @@ export async function getByIndex(storeName, indexName, value) {
   const db = await openDB();
   const store = db.transaction(storeName).objectStore(storeName);
   const index = store.index(indexName);
-  return promisify(index.getAll(value));
+  const all = await promisify(index.getAll(value));
+  return all.filter(r => !r.isDeleted);
+}
+
+/**
+ * Retrieve ALL records from a store with NO isDeleted filter.
+ * Used by the sync layer so soft-deleted tombstones propagate to peers.
+ * @param {string} storeName
+ * @returns {Promise<object[]>}
+ */
+export async function getAllRecordsRaw(storeName) {
+  const db = await openDB();
+  const records = await promisify(db.transaction(storeName).objectStore(storeName).getAll());
+  return records.sort((a, b) => {
+    if (a.createdAt && b.createdAt) return b.createdAt.localeCompare(a.createdAt);
+    return (b.id ?? 0) - (a.id ?? 0);
+  });
+}
+
+/**
+ * Physically remove a record from IndexedDB (no tombstone left behind).
+ * Called only by garbageCollect after tombstones have aged out.
+ * @param {string} storeName
+ * @param {number} id
+ * @returns {Promise<void>}
+ */
+export async function hardDeleteRecord(storeName, id) {
+  const db    = await openDB();
+  const store = db.transaction(storeName, 'readwrite').objectStore(storeName);
+  return promisify(store.delete(id));
+}
+
+/**
+ * Garbage-collect old soft-deleted records (runs at most once per month).
+ *
+ * Any record with isDeleted=true whose updatedAt is older than 30 days is
+ * assumed to have already propagated to all peers and is physically removed.
+ * The last-run timestamp is persisted in the meta store under 'lastGCAt'.
+ *
+ * @returns {Promise<void>}
+ */
+export async function garbageCollect() {
+  const GC_INTERVAL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+  const GC_AGE_MS      = 30 * 24 * 60 * 60 * 1000; // purge tombstones older than 30 days
+
+  const lastGCAt = await getMetaValue('lastGCAt');
+  const now      = Date.now();
+
+  if (lastGCAt && now - new Date(lastGCAt).getTime() < GC_INTERVAL_MS) {
+    return; // not due yet
+  }
+
+  const cutoff  = new Date(now - GC_AGE_MS).toISOString();
+  const STORES  = ['clients', 'projects', 'transactions', 'invoices', 'milestones', 'sessions', 'blueprintFeatures'];
+  let   purged  = 0;
+
+  for (const storeName of STORES) {
+    const all = await getAllRecordsRaw(storeName);
+    for (const rec of all) {
+      if (rec.isDeleted && (rec.updatedAt ?? rec.createdAt ?? '') < cutoff) {
+        await hardDeleteRecord(storeName, rec.id);
+        purged++;
+      }
+    }
+  }
+
+  await setMetaValue('lastGCAt', new Date().toISOString());
+  if (purged > 0) console.log(`[DB] garbageCollect: purged ${purged} stale tombstone(s).`);
 }
 
 /**

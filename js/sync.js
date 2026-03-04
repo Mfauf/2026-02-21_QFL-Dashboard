@@ -26,7 +26,7 @@
  *  Both devices need internet access for PeerJS signalling (free cloud server).
  */
 
-import { getAllRecords, clearStore, bulkPutRecords, getMetaValue, setMetaValue } from './db.js';
+import { getAllRecords, getAllRecordsRaw, clearStore, bulkPutRecords, getMetaValue, setMetaValue } from './db.js';
 import { getSettings, saveSettings } from './settings-store.js';
 
 const STORES = ['clients', 'projects', 'transactions', 'invoices', 'milestones', 'sessions', 'blueprintFeatures'];
@@ -58,7 +58,8 @@ export async function getOrCreateUID() {
 /* ── Data helpers ───────────────────────────────────────────────────────── */
 
 async function exportAll() {
-  const results = await Promise.all(STORES.map(s => getAllRecords(s)));
+  // Use getAllRecordsRaw so soft-deleted tombstones are included in the sync payload
+  const results = await Promise.all(STORES.map(s => getAllRecordsRaw(s)));
   const data = Object.fromEntries(STORES.map((s, i) => [s, results[i]]));
 
   // Include settings, stripping anything too large or device-specific
@@ -76,7 +77,8 @@ async function exportAll() {
 
 /**
  * Union-merge two full data snapshots.
- * For records with the same numeric id, the one with the newer createdAt wins.
+ * For records with the same numeric id, the one with the newer updatedAt wins,
+ * so edits and soft-deletes correctly overwrite stale copies.
  */
 function mergeSnapshots(local, remote) {
   const merged = {};
@@ -85,7 +87,10 @@ function mergeSnapshots(local, remote) {
     for (const rec of (local[store]  ?? [])) map.set(rec.id, rec);
     for (const rec of (remote[store] ?? [])) {
       const existing = map.get(rec.id);
-      if (!existing || (rec.createdAt ?? '') > (existing.createdAt ?? '')) {
+      // newest updatedAt wins; fall back to createdAt for legacy records without updatedAt
+      const recTs      = rec.updatedAt      ?? rec.createdAt      ?? '';
+      const existingTs = existing?.updatedAt ?? existing?.createdAt ?? '';
+      if (!existing || recTs > existingTs) {
         map.set(rec.id, rec);
       }
     }
