@@ -552,11 +552,12 @@ function detailHTML(project) {
         const bpTotal         = _blueprintFeatures.reduce((s, f) => s + Number(f.price || 0), 0);
         const hourlyRate      = Number(getSettings().blueprint?.amountPerHour || 0);
 
-        // Auto-compute hours from tracked sessions if project.hours is empty
+        // Auto-compute hours: effectiveHours (from source modal) → estimated (project.hours) → tracked sessions
         const trackedSeconds  = _sessions.reduce((s, sess) => s + Number(sess.durationSeconds || 0), 0);
         const trackedHours    = trackedSeconds / 3600;
-        const effectiveHours  = Number(project.hours) || (trackedSeconds > 0 ? trackedHours : null);
-        const hoursTracked    = !Number(project.hours) && trackedSeconds > 0;
+        const savedEffHours   = project.effectiveHours != null ? Number(project.effectiveHours) : null;
+        const effectiveHours  = savedEffHours ?? (Number(project.hours) || (trackedSeconds > 0 ? trackedHours : null));
+        const hoursTracked    = savedEffHours == null && !Number(project.hours) && trackedSeconds > 0;
 
         const hourlyAmount    = (!Number(project.amount) && bpTotal === 0 && hourlyRate > 0 && effectiveHours)
           ? hourlyRate * effectiveHours : null;
@@ -564,20 +565,51 @@ function detailHTML(project) {
         const amountFromBP      = !Number(project.amount) && bpTotal > 0;
         const amountFromHourly  = !Number(project.amount) && !bpTotal && hourlyAmount != null;
 
+        const savedSources  = project.amountSources ?? [];
+        const amtSubLabel   = savedSources.length > 0
+          ? '(' + savedSources.join(' + ') + ')'
+          : (amountFromBP ? '(from blueprint)' : amountFromHourly ? '(hourly rate)' : '');
         const amountLabel = effectiveAmount
-          ? `${formatQAR(effectiveAmount)} <span style="font-size:.65rem;opacity:.7;display:block;margin-top:.1rem">${amountFromBP ? '(from blueprint)' : amountFromHourly ? '(hourly rate)' : ''}</span>`
+          ? `${formatQAR(effectiveAmount)} <span style="font-size:.65rem;opacity:.7;display:block;margin-top:.1rem">${amtSubLabel}</span>`
           : '—';
-        const amountColor = (amountFromBP || amountFromHourly) ? 'var(--clr-primary-light)' : null;
+        const amountColor = (amountFromBP || amountFromHourly || savedSources.length > 0) ? 'var(--clr-primary-light)' : null;
         const hoursLabel  = hoursTracked
           ? `${effectiveHours % 1 === 0 ? effectiveHours.toLocaleString() : effectiveHours.toFixed(1)} hrs <span style="font-size:.65rem;opacity:.7;display:block;margin-top:.1rem">(tracked)</span>`
-          : (effectiveHours ? `${Number(project.hours).toLocaleString()} hrs` : '—');
+          : (effectiveHours ? `${effectiveHours % 1 === 0 ? effectiveHours.toLocaleString() : effectiveHours.toFixed(1)} hrs` : '—');
+
+        const iBtnStyle = `width:17px;height:17px;border-radius:50%;flex-shrink:0;
+                            border:1.5px solid var(--clr-text-faint);background:none;
+                            cursor:pointer;display:flex;align-items:center;justify-content:center;
+                            color:var(--clr-text-faint);font-size:9px;font-weight:800;line-height:1;padding:0;
+                            font-style:italic;font-family:Georgia,serif`;
+
+        const amountCardHTML = `
+          <div id="stat-amount-card" class="rounded-xl px-4 py-3" style="background:var(--clr-surface-2);border:1px solid var(--clr-border-mid)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <p style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
+                        color:var(--clr-text-faint);margin:0">Amount</p>
+              <button id="btn-amount-source" title="Set amount sources" style="${iBtnStyle}">i</button>
+            </div>
+            <p data-stat-val style="font-size:0.9rem;font-weight:600;color:${amountColor ?? 'var(--clr-text)'}">${amountLabel}</p>
+          </div>`;
+
+        const hoursColor = hoursTracked ? 'var(--clr-primary-light)' : null;
+        const hoursCardHTML = `
+          <div id="stat-hours-card" class="rounded-xl px-4 py-3" style="background:var(--clr-surface-2);border:1px solid var(--clr-border-mid)">
+            <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">
+              <p style="font-size:10px;font-weight:700;letter-spacing:0.1em;text-transform:uppercase;
+                        color:var(--clr-text-faint);margin:0">Hours</p>
+              <button id="btn-hours-source" title="Set hours source" style="${iBtnStyle}">i</button>
+            </div>
+            <p data-stat-val style="font-size:0.9rem;font-weight:600;color:${hoursColor ?? 'var(--clr-text)'}">${hoursLabel}</p>
+          </div>`;
 
         return `
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mt-6 pt-6
                   border-t border-[var(--clr-border)]">
         ${detailField('Client',     client || '—')}
-        ${detailField('Amount',     amountLabel,  amountColor)}
-        ${detailField('Hours',      hoursLabel,   hoursTracked  ? 'var(--clr-primary-light)' : null)}`;
+        ${amountCardHTML}
+        ${hoursCardHTML}`;
       })()}
         ${detailField('Start Date', formatDate(project.startDate))}
         ${detailField('Due Date',   formatDate(project.endDate), overdue ? 'var(--clr-danger)' : null, overdue)}
@@ -603,6 +635,367 @@ function detailHTML(project) {
       </div>
       <div id="milestones-list"></div>
     </div>`;
+}
+
+/* ── Amount Source Modal ────────────────────────────────────────────────── */
+function showAmountSourceModal(project, { bpTotal, hourlyAmount, hourlyRate, effectiveHours }) {
+  const saved   = project.amountSources ?? [];
+  const fmtQAR  = (v) => v > 0 ? `QAR ${Number(v).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:2})}` : '—';
+
+  // Pre-fill contract value: prefer stored contractAmount, else current project.amount if no other source
+  const contractPrefill = project.contractAmount != null
+    ? project.contractAmount
+    : (saved.length === 0 && Number(project.amount) > 0 ? project.amount : '');
+
+  // Default checked state mirrors the stat card fallback chain:
+  //   contract (if contractAmount set) → blueprint (if features exist) → hourly (otherwise)
+  const hasContract = Number(project.contractAmount) > 0 || Number(project.amount) > 0;
+  const ckContract  = saved.includes('contract')  || (saved.length === 0 && hasContract  && !bpTotal && !hourlyAmount);
+  const ckHourly    = saved.includes('hourly')    || (saved.length === 0 && !hasContract && !bpTotal && !!hourlyAmount);
+  const ckBlueprint = saved.includes('blueprint') || (saved.length === 0 && !hasContract && !!bpTotal);
+
+  openModal({
+    title:       'Set Amount Sources',
+    submitLabel: 'Apply',
+    bodyHTML: `
+      <style>
+        .ams-row {
+          display:flex; align-items:center; gap:12px; padding:11px 14px;
+          border-radius:10px; border:1.5px solid var(--clr-border);
+          background:var(--clr-surface-2); cursor:pointer; position:relative;
+          transition:border-color 140ms, background 140ms;
+        }
+        .ams-row.disabled { opacity:.38; pointer-events:none; }
+        .ams-row:has(.ams-cb:checked) {
+          background:rgba(var(--clr-primary-rgb,99,102,241),.07);
+        }
+        .ams-cb { position:absolute; opacity:0; width:0; height:0; }
+        .ams-check {
+          width:17px; height:17px; border-radius:4px; flex-shrink:0;
+          border:2px solid var(--clr-border-mid); background:var(--clr-surface);
+          display:flex; align-items:center; justify-content:center;
+          transition:background 140ms, border-color 140ms;
+        }
+        .ams-row:has(.ams-cb:checked) .ams-check { background:var(--clr-primary); }
+        .ams-check svg { display:none; }
+        .ams-row:has(.ams-cb:checked) .ams-check svg { display:block; }
+        .ams-info { flex:1; min-width:0; }
+        .ams-info-title { font-size:.8rem; font-weight:600; color:var(--clr-text); margin:0 0 1px; }
+        .ams-info-sub   { font-size:.7rem; color:var(--clr-text-faint); margin:0; }
+        .ams-val { font-size:.875rem; font-weight:700; color:var(--clr-text); flex-shrink:0; text-align:right; }
+        .ams-contract-input-wrap { display:flex; align-items:center; gap:0;
+          border:1.5px solid var(--clr-border); border-radius:8px;
+          background:var(--clr-surface); overflow:hidden; flex-shrink:0; width:130px; }
+        .ams-row:has(.ams-cb:checked) .ams-contract-input-wrap { border-color:var(--clr-primary); }
+        .ams-contract-prefix {
+          padding:0 8px; font-size:.72rem; font-weight:700;
+          color:var(--clr-text-faint); background:var(--clr-surface-2);
+          border-right:1px solid var(--clr-border); white-space:nowrap;
+          display:flex; align-items:center; height:100%;
+        }
+        .ams-contract-input {
+          flex:1; min-width:0; border:none; background:transparent;
+          padding:6px 8px; font-size:.82rem; font-weight:600; color:var(--clr-text);
+          outline:none;
+        }
+        .ams-total-row {
+          display:flex; align-items:center; justify-content:space-between;
+          border-radius:10px; padding:11px 14px;
+          background:rgba(var(--clr-primary-rgb,99,102,241),.1);
+          border:1.5px solid var(--clr-primary);
+        }
+      </style>
+      <div style="padding:14px 18px;display:flex;flex-direction:column;gap:7px">
+
+        <!-- Contract Amount -->
+        <label class="ams-row">
+          <input type="checkbox" id="ams-contract" class="ams-cb" ${ckContract ? 'checked' : ''}>
+          <span class="ams-check">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5l2.5 2.5 4.5-4"/></svg>
+          </span>
+          <div class="ams-info">
+            <p class="ams-info-title">Contract Amount</p>
+            <p class="ams-info-sub">Manually agreed project value</p>
+          </div>
+          <div class="ams-contract-input-wrap">
+            <span class="ams-contract-prefix">QAR</span>
+            <input id="ams-contract-val" type="number" min="0" step="0.01"
+                   class="ams-contract-input" placeholder="0.00" value="${contractPrefill}">
+          </div>
+        </label>
+
+        <!-- Hourly Rate -->
+        <label class="ams-row ${!hourlyAmount ? 'disabled' : ''}">
+          <input type="checkbox" id="ams-hourly" class="ams-cb"
+                 ${ckHourly ? 'checked' : ''} ${!hourlyAmount ? 'disabled' : ''}>
+          <span class="ams-check">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5l2.5 2.5 4.5-4"/></svg>
+          </span>
+          <div class="ams-info">
+            <p class="ams-info-title">Hourly Rate</p>
+            <p class="ams-info-sub">
+              ${hourlyRate > 0
+                ? `${effectiveHours != null ? (effectiveHours % 1 === 0 ? effectiveHours : effectiveHours.toFixed(1)) : 0} hrs &times; ${fmtQAR(hourlyRate)} / hr`
+                : 'No hourly rate — configure in Settings'}
+            </p>
+          </div>
+          <span class="ams-val">${fmtQAR(hourlyAmount)}</span>
+        </label>
+
+        <!-- Blueprint Total -->
+        <label class="ams-row ${!bpTotal ? 'disabled' : ''}">
+          <input type="checkbox" id="ams-blueprint" class="ams-cb"
+                 ${ckBlueprint ? 'checked' : ''} ${!bpTotal ? 'disabled' : ''}>
+          <span class="ams-check">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5l2.5 2.5 4.5-4"/></svg>
+          </span>
+          <div class="ams-info">
+            <p class="ams-info-title">Blueprint Total</p>
+            <p class="ams-info-sub">Sum of all blueprint feature prices</p>
+          </div>
+          <span class="ams-val">${fmtQAR(bpTotal)}</span>
+        </label>
+
+        <!-- Live Total -->
+        <div class="ams-total-row">
+          <span style="font-size:.8rem;font-weight:600;color:var(--clr-text)">Total Amount</span>
+          <span id="ams-total" style="font-size:1rem;font-weight:800;color:var(--clr-primary)">—</span>
+        </div>
+      </div>`,
+    onSubmit: async () => {
+      const useContract  = document.getElementById('ams-contract')?.checked;
+      const useHourly    = document.getElementById('ams-hourly')?.checked;
+      const useBlueprint = document.getElementById('ams-blueprint')?.checked;
+      const contractVal  = Number(document.getElementById('ams-contract-val')?.value) || 0;
+
+      if (!useContract && !useHourly && !useBlueprint) {
+        throw new Error('Select at least one source.');
+      }
+
+      const total = (useContract  ? contractVal      : 0)
+                  + (useHourly    ? (hourlyAmount||0) : 0)
+                  + (useBlueprint ? (bpTotal||0)      : 0);
+
+      const sources = [];
+      if (useContract)  sources.push('contract');
+      if (useHourly)    sources.push('hourly');
+      if (useBlueprint) sources.push('blueprint');
+
+      await updateRecord('projects', project.id, {
+        amount:         total,
+        contractAmount: useContract ? contractVal : (project.contractAmount ?? null),
+        amountSources:  sources,
+      });
+
+      const updated = _projects.find(p => p.id === project.id);
+      if (updated) {
+        updated.amount         = total;
+        updated.contractAmount = useContract ? contractVal : (project.contractAmount ?? null);
+        updated.amountSources  = sources;
+      }
+      renderStatCards();
+    },
+  });
+
+  // Live total — wire after openModal sets innerHTML synchronously
+  const calc = () => {
+    const useContract  = document.getElementById('ams-contract')?.checked;
+    const useHourly    = document.getElementById('ams-hourly')?.checked;
+    const useBlueprint = document.getElementById('ams-blueprint')?.checked;
+    const contractVal  = Number(document.getElementById('ams-contract-val')?.value) || 0;
+    const total = (useContract  ? contractVal      : 0)
+                + (useHourly    ? (hourlyAmount||0) : 0)
+                + (useBlueprint ? (bpTotal||0)      : 0);
+    const el = document.getElementById('ams-total');
+    if (el) el.textContent = total > 0 ? `QAR ${total.toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:2})}` : '—';
+  };
+  document.getElementById('ams-contract')?.addEventListener('change', calc);
+  document.getElementById('ams-hourly')?.addEventListener('change', calc);
+  document.getElementById('ams-blueprint')?.addEventListener('change', calc);
+  document.getElementById('ams-contract-val')?.addEventListener('input', calc);
+  calc();
+}
+
+/* ── Hours Source Modal ─────────────────────────────────────────────────── */
+function showHoursSourceModal(project, { trackedHours }) {
+  const saved        = project.hoursSources ?? [];
+  const estimatedVal = Number(project.hours) || 0;
+  const trackedVal   = trackedHours || 0;
+  const fmtHrs = (v) => v > 0
+    ? `${v % 1 === 0 ? v.toLocaleString() : Number(v).toFixed(1)} hrs`
+    : '—';
+
+  const ckTracked   = saved.includes('tracked')   || (saved.length === 0 && trackedVal   > 0 && !estimatedVal);
+  const ckEstimated = saved.includes('estimated') || (saved.length === 0 && estimatedVal > 0);
+
+  openModal({
+    title:       'Set Hours Source',
+    submitLabel: 'Apply',
+    bodyHTML: `
+      <style>
+        .ahs-row {
+          display:flex; align-items:center; gap:12px; padding:11px 14px;
+          border-radius:10px; border:1.5px solid var(--clr-border);
+          background:var(--clr-surface-2); cursor:pointer; position:relative;
+          transition:border-color 140ms, background 140ms;
+        }
+        .ahs-row.disabled { opacity:.38; pointer-events:none; }
+        .ahs-row:has(.ahs-cb:checked) {
+          background:rgba(var(--clr-primary-rgb,99,102,241),.07);
+        }
+        .ahs-cb { position:absolute; opacity:0; width:0; height:0; }
+        .ahs-check {
+          width:17px; height:17px; border-radius:4px; flex-shrink:0;
+          border:2px solid var(--clr-border-mid); background:var(--clr-surface);
+          display:flex; align-items:center; justify-content:center;
+          transition:background 140ms, border-color 140ms;
+        }
+        .ahs-row:has(.ahs-cb:checked) .ahs-check { background:var(--clr-primary); }
+        .ahs-check svg { display:none; }
+        .ahs-row:has(.ahs-cb:checked) .ahs-check svg { display:block; }
+        .ahs-info { flex:1; min-width:0; }
+        .ahs-info-title { font-size:.8rem; font-weight:600; color:var(--clr-text); margin:0 0 1px; }
+        .ahs-info-sub   { font-size:.7rem; color:var(--clr-text-faint); margin:0; }
+        .ahs-val { font-size:.875rem; font-weight:700; color:var(--clr-text); flex-shrink:0; text-align:right; }
+        .ahs-total-row {
+          display:flex; align-items:center; justify-content:space-between;
+          border-radius:10px; padding:11px 14px;
+          background:rgba(var(--clr-primary-rgb,99,102,241),.1);
+          border:1.5px solid var(--clr-primary);
+        }
+      </style>
+      <div style="padding:14px 18px;display:flex;flex-direction:column;gap:7px">
+
+        <!-- Time Tracked -->
+        <label class="ahs-row ${!trackedVal ? 'disabled' : ''}">
+          <input type="checkbox" id="ahs-tracked" class="ahs-cb"
+                 ${ckTracked ? 'checked' : ''} ${!trackedVal ? 'disabled' : ''}>
+          <span class="ahs-check">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5l2.5 2.5 4.5-4"/></svg>
+          </span>
+          <div class="ahs-info">
+            <p class="ahs-info-title">Time Tracked</p>
+            <p class="ahs-info-sub">Accumulated from timer sessions</p>
+          </div>
+          <span class="ahs-val">${fmtHrs(trackedVal)}</span>
+        </label>
+
+        <!-- Estimated Hours -->
+        <label class="ahs-row ${!estimatedVal ? 'disabled' : ''}">
+          <input type="checkbox" id="ahs-estimated" class="ahs-cb"
+                 ${ckEstimated ? 'checked' : ''} ${!estimatedVal ? 'disabled' : ''}>
+          <span class="ahs-check">
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#fff" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5l2.5 2.5 4.5-4"/></svg>
+          </span>
+          <div class="ahs-info">
+            <p class="ahs-info-title">Estimated Hours</p>
+            <p class="ahs-info-sub">Manually set on the project</p>
+          </div>
+          <span class="ahs-val">${fmtHrs(estimatedVal)}</span>
+        </label>
+
+        <!-- Live Total -->
+        <div class="ahs-total-row">
+          <span style="font-size:.8rem;font-weight:600;color:var(--clr-text)">Total Hours</span>
+          <span id="ahs-total" style="font-size:1rem;font-weight:800;color:var(--clr-primary)">—</span>
+        </div>
+      </div>`,
+    onSubmit: async () => {
+      const useTracked   = document.getElementById('ahs-tracked')?.checked;
+      const useEstimated = document.getElementById('ahs-estimated')?.checked;
+
+      if (!useTracked && !useEstimated) {
+        throw new Error('Select at least one source.');
+      }
+
+      const total = (useTracked   ? trackedVal   : 0)
+                  + (useEstimated ? estimatedVal : 0);
+
+      const sources = [];
+      if (useTracked)   sources.push('tracked');
+      if (useEstimated) sources.push('estimated');
+
+      await updateRecord('projects', project.id, {
+        effectiveHours: total || null,
+        hoursSources:   sources,
+      });
+
+      const updated = _projects.find(p => p.id === project.id);
+      if (updated) {
+        updated.effectiveHours = total || null;
+        updated.hoursSources   = sources;
+      }
+      renderStatCards();
+    },
+  });
+
+  // Live total
+  const calc = () => {
+    const useTracked   = document.getElementById('ahs-tracked')?.checked;
+    const useEstimated = document.getElementById('ahs-estimated')?.checked;
+    const total = (useTracked   ? trackedVal   : 0)
+                + (useEstimated ? estimatedVal : 0);
+    const el = document.getElementById('ahs-total');
+    if (el) el.textContent = total > 0
+      ? `${total % 1 === 0 ? total.toLocaleString() : Number(total).toFixed(1)} hrs`
+      : '—';
+  };
+  document.getElementById('ahs-tracked')?.addEventListener('change', calc);
+  document.getElementById('ahs-estimated')?.addEventListener('change', calc);
+  calc();
+}
+
+/* ── Stat Card Live Patch ───────────────────────────────────────────── */
+function renderStatCards() {
+  if (_currentView !== 'detail' || !_container) return;
+  const project = _projects.find(p => p.id === _currentProjectId);
+  if (!project) return;
+
+  const amountEl = _container.querySelector('#stat-amount-card [data-stat-val]');
+  const hoursEl  = _container.querySelector('#stat-hours-card  [data-stat-val]');
+  if (!amountEl && !hoursEl) return;
+
+  const bpTotal    = _blueprintFeatures.reduce((s, f) => s + Number(f.price || 0), 0);
+  const hourlyRate = Number(getSettings().blueprint?.amountPerHour || 0);
+
+  // Include currently-running live seconds so Hours updates every tick
+  const savedSec    = _sessions.reduce((s, sess) => s + Number(sess.durationSeconds || 0), 0);
+  const liveSec     = Math.floor(getElapsedMs(_currentProjectId) / 1000);
+  const totalSec    = savedSec + liveSec;
+  const trackedHrs  = totalSec / 3600;
+
+  const savedEffHrs    = project.effectiveHours != null ? Number(project.effectiveHours) : null;
+  const effectiveHours = savedEffHrs ?? (Number(project.hours) || (totalSec > 0 ? trackedHrs : null));
+  const hoursTracked   = savedEffHrs == null && !Number(project.hours) && totalSec > 0;
+
+  const hourlyAmount   = (!Number(project.amount) && bpTotal === 0 && hourlyRate > 0 && effectiveHours)
+                         ? hourlyRate * effectiveHours : null;
+  const effectiveAmount = Number(project.amount) || bpTotal || hourlyAmount || null;
+  const amtFromBP      = !Number(project.amount) && bpTotal > 0;
+  const amtFromHourly  = !Number(project.amount) && !bpTotal && hourlyAmount != null;
+
+  const subSpan = (txt) => txt ? ` <span style="font-size:.65rem;opacity:.7;display:block;margin-top:.1rem">${txt}</span>` : '';
+  const savedSources = project.amountSources ?? [];
+  const amtSubLabel  = savedSources.length > 0
+    ? '(' + savedSources.join(' + ') + ')'
+    : (amtFromBP ? '(from blueprint)' : amtFromHourly ? '(hourly rate)' : '');
+  const amountLabel = effectiveAmount
+    ? `${formatQAR(effectiveAmount)}${subSpan(amtSubLabel)}`
+    : '—';
+  const amountColor = (amtFromBP || amtFromHourly || savedSources.length > 0) ? 'var(--clr-primary-light)' : 'var(--clr-text)';
+
+  const hoursLabel = hoursTracked
+    ? `${effectiveHours % 1 === 0 ? effectiveHours.toLocaleString() : effectiveHours.toFixed(1)} hrs${subSpan('(tracked)')}`
+    : (effectiveHours ? `${effectiveHours % 1 === 0 ? effectiveHours.toLocaleString() : effectiveHours.toFixed(1)} hrs` : '—');
+  const hoursColor = hoursTracked ? 'var(--clr-primary-light)' : 'var(--clr-text)';
+
+  if (amountEl) { amountEl.style.color = amountColor; amountEl.innerHTML = amountLabel; }
+  if (hoursEl)  { hoursEl.style.color  = hoursColor;  hoursEl.innerHTML  = hoursLabel; }
 }
 
 function detailField(label, value, color = null, warn = false) {
@@ -656,6 +1049,25 @@ function bindDetailListeners() {
   _container.querySelector('#btn-detail-blueprint')
     ?.addEventListener('click', () => openBlueprintView());
 
+  _container.querySelector('#btn-amount-source')?.addEventListener('click', () => {
+    const project = _projects.find(p => p.id === _currentProjectId);
+    if (!project) return;
+    const bpTotal        = _blueprintFeatures.reduce((s, f) => s + Number(f.price || 0), 0);
+    const hourlyRate     = Number(getSettings().blueprint?.amountPerHour || 0);
+    const trackedSec     = _sessions.reduce((s, sess) => s + Number(sess.durationSeconds || 0), 0);
+    const effectiveHours = Number(project.hours) || (trackedSec > 0 ? trackedSec / 3600 : null);
+    const hourlyAmount   = (hourlyRate > 0 && effectiveHours) ? hourlyRate * effectiveHours : null;
+    showAmountSourceModal(project, { bpTotal, hourlyAmount, hourlyRate, effectiveHours });
+  });
+
+  _container.querySelector('#btn-hours-source')?.addEventListener('click', () => {
+    const project = _projects.find(p => p.id === _currentProjectId);
+    if (!project) return;
+    const trackedSec  = _sessions.reduce((s, sess) => s + Number(sess.durationSeconds || 0), 0);
+    const trackedHours = trackedSec > 0 ? trackedSec / 3600 : 0;
+    showHoursSourceModal(project, { trackedHours });
+  });
+
   // Initialise timer controls for the current project
   renderTimerControls();
   // Re-register this project's controls in the global map
@@ -676,7 +1088,7 @@ function renderMilestones() {
   // ── Time-tracked summary bar ────────────────────────────────────────────
   const totalTrackedSec = _sessions.reduce((sum, s) => sum + (s.durationSeconds ?? 0), 0);
   const budgetProject   = _projects.find(p => p.id === _currentProjectId);
-  const budgetHours     = budgetProject?.hours ? Number(budgetProject.hours) : null;
+  const budgetHours     = budgetProject?.hours ? Number(budgetProject.hours) : null; // always estimated only
   const trackedHours    = totalTrackedSec / 3600;
   const showTimeBar     = totalTrackedSec > 0 || budgetHours;
   const timePct         = budgetHours ? Math.min(100, Math.round((trackedHours / budgetHours) * 100)) : null;
@@ -1168,6 +1580,7 @@ async function _stopTimerById(pid) {
     _sessions = await loadSessions(pid);
     if (lastMilestone) _collapsedMilestones.delete(String(lastMilestone.id));
     renderMilestones();
+    renderStatCards();
   }
 
   // Fire stopped event carrying remaining active timers
@@ -1273,15 +1686,42 @@ function blueprintViewHTML(project, clientName, terms) {
         </div>
       </div>
 
+      ${(() => {
+        // Effective amount — same logic as detail view
+        const bpAmt          = _blueprintFeatures.reduce((s, f) => s + Number(f.price || 0), 0);
+        const hrRate         = Number(getSettings().blueprint?.amountPerHour || 0);
+        const trackedSec     = _sessions.reduce((s, sess) => s + Number(sess.durationSeconds || 0), 0);
+        const effHoursAmt    = Number(project.hours) || (trackedSec > 0 ? trackedSec / 3600 : null);
+        const hourlyAmt      = (!Number(project.amount) && bpAmt === 0 && hrRate > 0 && effHoursAmt)
+                               ? hrRate * effHoursAmt : null;
+        const effAmount      = Number(project.amount) || bpAmt || hourlyAmt || null;
+        const amtFromBP      = !Number(project.amount) && bpAmt > 0;
+        const amtFromHourly  = !Number(project.amount) && !bpAmt && hourlyAmt != null;
+        const amtLabel       = effAmount
+          ? `${formatQAR(effAmount)}<span style="font-size:.65rem;opacity:.7;display:block;margin-top:.1rem">${amtFromBP ? '(from blueprint)' : amtFromHourly ? '(hourly rate)' : ''}</span>`
+          : '—';
+        const amtColor       = (amtFromBP || amtFromHourly) ? 'var(--clr-primary-light)' : null;
+
+        // Effective hours — same logic as detail view
+        const trackedHrs     = trackedSec > 0 ? trackedSec / 3600 : null;
+        const effHours       = Number(project.hours) || trackedHrs || null;
+        const hrsTracked     = !Number(project.hours) && trackedHrs != null;
+        const hrsLabel       = effHours
+          ? `${effHours % 1 === 0 ? effHours.toLocaleString() : effHours.toFixed(1)} hrs<span style="font-size:.65rem;opacity:.7;display:block;margin-top:.1rem">${hrsTracked ? '(tracked)' : ''}</span>`
+          : '—';
+        const hrsColor       = hrsTracked ? 'var(--clr-primary-light)' : null;
+
+        return `
       <!-- Details grid — no Status -->
       <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mt-6 pt-6
                   border-t border-[var(--clr-border)]">
         ${detailField('Client',     clientName || '—')}
-        ${detailField('Amount',     project.amount ? formatQAR(Number(project.amount)) : '—')}
-        ${detailField('Hours',      project.hours  ? `${Number(project.hours).toLocaleString()} hrs` : '—')}
+        ${detailField('Amount',     amtLabel, amtColor)}
+        ${detailField('Hours',      hrsLabel, hrsColor)}
         ${detailField('Start Date', formatDate(project.startDate))}
         ${detailField('Due Date',   formatDate(project.endDate), overdue ? 'var(--clr-danger)' : null, overdue)}
-      </div>
+      </div>`;
+      })()}
     </div>
 
     <!-- Project Description card -->
@@ -1592,6 +2032,8 @@ function bindBlueprintListeners(container, project, client) {
 /* ── Form HTML (shared by add + edit) ───────────────────────────────────── */
 function formHTML(project = {}) {
   const v   = (k) => escapeHtml(project[k] ?? '');
+  // For the amount field: show contractAmount only (never the computed total)
+  const vAmount = () => escapeHtml(String(project.contractAmount != null ? project.contractAmount : ''));
   const sel = (val, opt) => String(val) === String(opt) ? 'selected' : '';
 
   // Build client options; include a blank "none" option
@@ -1642,7 +2084,7 @@ function formHTML(project = {}) {
         <div>
           <label class="form-label" for="pf-amount">Contract Amount (QAR)</label>
           <input id="pf-amount" name="amount" type="number" min="0" step="0.01" class="form-input"
-                 placeholder="e.g. 15000" value="${v('amount')}" autocomplete="off"/>
+                 placeholder="e.g. 15000" value="${vAmount()}" autocomplete="off"/>
         </div>
         <div>
           <label class="form-label" for="pf-hours">Estimated Hours</label>
@@ -1689,16 +2131,18 @@ function openAddModal() {
     bodyHTML:    formHTML(),
     submitLabel: 'Add Project',
     onSubmit: async (fd) => {
+      const contractAmount = fd.get('amount') ? Number(fd.get('amount')) : null;
       const data = {
-        name:      fd.get('name').trim(),
-        clientId:  fd.get('clientId') ? Number(fd.get('clientId')) : null,
-        category:  fd.get('category').trim(),
-        amount:    fd.get('amount')    ? Number(fd.get('amount'))    : null,
-        hours:     fd.get('hours')     ? Number(fd.get('hours'))     : null,
-        startDate: fd.get('startDate') || null,
-        endDate:   fd.get('endDate')   || null,
-        status:    fd.get('status'),
-        notes:     fd.get('notes').trim(),
+        name:           fd.get('name').trim(),
+        clientId:       fd.get('clientId') ? Number(fd.get('clientId')) : null,
+        category:       fd.get('category').trim(),
+        amount:         contractAmount,
+        contractAmount: contractAmount,
+        hours:          fd.get('hours')     ? Number(fd.get('hours'))     : null,
+        startDate:      fd.get('startDate') || null,
+        endDate:        fd.get('endDate')   || null,
+        status:         fd.get('status'),
+        notes:          fd.get('notes').trim(),
       };
 
       if (!data.name) throw new Error('Project name is required');
@@ -1720,16 +2164,38 @@ async function openEditModal(id) {
     bodyHTML:    formHTML(project),
     submitLabel: 'Save Changes',
     onSubmit: async (fd) => {
+      const contractAmount = fd.get('amount') ? Number(fd.get('amount')) : null;
+      const newHours       = fd.get('hours')  ? Number(fd.get('hours'))  : null;
+      const sources        = project.amountSources ?? [];
+
+      // Recompute total amount from all active sources using the new contract value
+      let newAmount;
+      if (sources.length > 0) {
+        const bpTotal      = _blueprintFeatures.reduce((s, f) => s + Number(f.price || 0), 0);
+        const hourlyRate   = Number(getSettings().blueprint?.amountPerHour || 0);
+        const trackedSec   = _sessions.reduce((s, sess) => s + Number(sess.durationSeconds || 0), 0);
+        const effHours     = newHours || (trackedSec > 0 ? trackedSec / 3600 : null);
+        const hourlyAmount = (hourlyRate > 0 && effHours) ? hourlyRate * effHours : null;
+        const total = (sources.includes('contract')  ? (contractAmount || 0) : 0)
+                    + (sources.includes('hourly')    ? (hourlyAmount   || 0) : 0)
+                    + (sources.includes('blueprint') ? (bpTotal        || 0) : 0);
+        newAmount = total || null;
+      } else {
+        // No sources configured — amount equals contract amount
+        newAmount = contractAmount;
+      }
+
       const updates = {
-        name:      fd.get('name').trim(),
-        clientId:  fd.get('clientId') ? Number(fd.get('clientId')) : null,
-        category:  fd.get('category').trim(),
-        amount:    fd.get('amount')    ? Number(fd.get('amount'))    : null,
-        hours:     fd.get('hours')     ? Number(fd.get('hours'))     : null,
-        startDate: fd.get('startDate') || null,
-        endDate:   fd.get('endDate')   || null,
-        status:    fd.get('status'),
-        notes:     fd.get('notes').trim(),
+        name:           fd.get('name').trim(),
+        clientId:       fd.get('clientId') ? Number(fd.get('clientId')) : null,
+        category:       fd.get('category').trim(),
+        contractAmount: contractAmount,
+        amount:         newAmount,
+        hours:          newHours,
+        startDate:      fd.get('startDate') || null,
+        endDate:        fd.get('endDate')   || null,
+        status:         fd.get('status'),
+        notes:          fd.get('notes').trim(),
       };
 
       if (!updates.name) throw new Error('Project name is required');
