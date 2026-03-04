@@ -48,6 +48,9 @@ export const DEFAULTS = {
   sync: {
     peerUID: '',       // saved peer device UID for quick re-sync
   },
+  // ISO timestamps tracking when each top-level section was last saved locally.
+  // Used by the sync layer to decide which device's copy of a section is newer.
+  _sectionTimestamps: {},
 };
 
 /** ── Read ─────────────────────────────────────────────────────────────── */
@@ -71,13 +74,32 @@ export function getSettings() {
 
 /**
  * Merge a partial settings object into the stored settings and persist.
+ * Automatically stamps `_sectionTimestamps[key]` for every top-level key
+ * in the patch so the sync layer can do "newest-wins" merging per section.
  * @param {Partial<typeof DEFAULTS>} patch
  * @returns {typeof DEFAULTS} the new full settings object
  */
 export function saveSettings(patch) {
+  const now  = new Date().toISOString();
   const next = deepMerge(getSettings(), patch);
+  // Stamp each patched section (skip the timestamps dict itself)
+  const ts = { ...(next._sectionTimestamps ?? {}) };
+  for (const key of Object.keys(patch)) {
+    if (key !== '_sectionTimestamps') ts[key] = now;
+  }
+  next._sectionTimestamps = ts;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(next));
   return next;
+}
+
+/**
+ * Write a fully-assembled settings object directly to localStorage
+ * WITHOUT updating section timestamps. Used exclusively by the sync
+ * layer so it can preserve the "winning" timestamps from the merge.
+ * @param {object} fullSettings
+ */
+export function setSettingsRaw(fullSettings) {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(fullSettings));
 }
 
 /** ── Helpers ──────────────────────────────────────────────────────────── */

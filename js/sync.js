@@ -27,7 +27,7 @@
  */
 
 import { getAllRecords, getAllRecordsRaw, clearStore, bulkPutRecords, getMetaValue, setMetaValue } from './db.js';
-import { getSettings, saveSettings } from './settings-store.js';
+import { getSettings, saveSettings, setSettingsRaw } from './settings-store.js';
 
 const STORES = ['clients', 'projects', 'transactions', 'invoices', 'milestones', 'sessions', 'blueprintFeatures'];
 
@@ -106,16 +106,45 @@ async function applyMerge(incoming) {
   const local  = await exportAll();
   const merged = mergeSnapshots(local, incoming);
 
-  // Merge settings: incoming wins on profile/invoice/categories,
-  // but local keeps its own appearance (theme) and sync (peerUID)
+  // Merge settings using per-section "newest _sectionTimestamps wins" logic.
+  // Sections that are device-specific (appearance, sync) are always kept local.
+  // The profile avatar is always kept local (too large for P2P channel).
   if (incoming._settings) {
     const localSettings = getSettings();
-    saveSettings({
-      ...incoming._settings,
-      profile:    { ...incoming._settings.profile, avatar: localSettings.profile?.avatar }, // keep local avatar
-      appearance: localSettings.appearance,  // keep local theme pref
-      sync:       localSettings.sync,        // keep local peerUID
-    });
+    const localTs  = localSettings._sectionTimestamps ?? {};
+    const remoteTs = incoming._settings._sectionTimestamps ?? {};
+
+    // These sections participate in conflict-resolution by timestamp.
+    // 'appearance' and 'sync' are intentionally excluded — always stay local.
+    const SYNCED_SECTIONS = ['profile', 'invoice', 'blueprint', 'defaultFeatures', 'categories'];
+
+    // Start from the local copy, then overwrite any section where the remote
+    // peer has a newer save timestamp.
+    const mergedSettings = { ...localSettings };
+    for (const section of SYNCED_SECTIONS) {
+      const lTs = localTs[section]  ?? '';
+      const rTs = remoteTs[section] ?? '';
+      if (rTs > lTs) mergedSettings[section] = incoming._settings[section];
+    }
+
+    // Per-device overrides — these are never replaced by a remote copy
+    mergedSettings.profile    = { ...mergedSettings.profile, avatar: localSettings.profile?.avatar };
+    mergedSettings.appearance = localSettings.appearance;
+    mergedSettings.sync       = localSettings.sync;
+
+    // Carry forward the max timestamp per section so future peers also
+    // see the correct winner rather than re-fighting old conflicts.
+    const mergedTs = { ...localTs };
+    for (const section of SYNCED_SECTIONS) {
+      const lTs = localTs[section]  ?? '';
+      const rTs = remoteTs[section] ?? '';
+      mergedTs[section] = rTs > lTs ? rTs : lTs;
+    }
+    mergedSettings._sectionTimestamps = mergedTs;
+
+    // Write the assembled object without re-stamping (preserve merged timestamps)
+    setSettingsRaw(mergedSettings);
+
     // Notify any open settings page to re-populate its fields
     window.dispatchEvent(new CustomEvent('qfl:settings-synced'));
   }
