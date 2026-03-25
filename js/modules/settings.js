@@ -311,11 +311,14 @@ async function exportData() {
   if (btn) { btn.disabled = true; btn.textContent = 'Exporting…'; }
 
   try {
-    const [clients, projects, transactions, invoices] = await Promise.all([
+    const [clients, projects, transactions, invoices, milestones, sessions, blueprintFeatures] = await Promise.all([
       getAllRecords('clients'),
       getAllRecords('projects'),
       getAllRecords('transactions'),
       getAllRecords('invoices'),
+      getAllRecords('milestones'),
+      getAllRecords('sessions'),
+      getAllRecords('blueprintFeatures'),
     ]);
 
     const payload = {
@@ -325,6 +328,9 @@ async function exportData() {
       projects,
       transactions,
       invoices,
+      milestones,
+      sessions,
+      blueprintFeatures,
     };
 
     const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
@@ -353,16 +359,27 @@ async function importData(file) {
     const text    = await file.text();
     const payload = JSON.parse(text);
 
-    // Basic shape validation
-    const STORES = ['clients', 'projects', 'transactions', 'invoices'];
-    const missing = STORES.filter(s => !Array.isArray(payload[s]));
+    // Core stores — required in every backup file
+    const CORE_STORES = ['clients', 'projects', 'transactions', 'invoices'];
+    const missing = CORE_STORES.filter(s => !Array.isArray(payload[s]));
     if (missing.length) {
       throw new Error(`Invalid backup file — missing: ${missing.join(', ')}.`);
     }
 
-    // Clear all stores then bulk-insert
-    await Promise.all(STORES.map(s => clearStore(s)));
-    await Promise.all(STORES.map(s => bulkAddRecords(s, payload[s])));
+    // Optional stores — present in newer backups; skip if absent (backwards-compat)
+    const OPTIONAL_STORES = ['milestones', 'sessions', 'blueprintFeatures'];
+
+    // Clear core stores then bulk-insert
+    await Promise.all(CORE_STORES.map(s => clearStore(s)));
+    await Promise.all(CORE_STORES.map(s => bulkAddRecords(s, payload[s])));
+
+    // Clear + restore optional stores only if present in the backup
+    for (const s of OPTIONAL_STORES) {
+      if (Array.isArray(payload[s])) {
+        await clearStore(s);
+        await bulkAddRecords(s, payload[s]);
+      }
+    }
 
     // Restore settings if present (keep current avatar if backup has none)
     if (payload.settings && typeof payload.settings === 'object') {
@@ -371,8 +388,9 @@ async function importData(file) {
       window.refreshSidebarProfile?.();
     }
 
-    const total = STORES.reduce((n, s) => n + (payload[s]?.length ?? 0), 0);
-    toast(`Import complete — ${total} records restored.`, 'success');
+    const coreTotal     = CORE_STORES.reduce((n, s) => n + (payload[s]?.length ?? 0), 0);
+    const optionalTotal = OPTIONAL_STORES.reduce((n, s) => n + (payload[s]?.length ?? 0), 0);
+    toast(`Import complete — ${coreTotal + optionalTotal} records restored.`, 'success');
   } catch (err) {
     console.error('[Settings] Import error:', err);
     toast(err.message || 'Import failed. Check the file and try again.', 'error');
@@ -393,7 +411,8 @@ function resetAllData() {
     onConfirm: async () => {
       try {
         await Promise.all(
-          ['clients', 'projects', 'transactions', 'invoices'].map(s => clearStore(s))
+          ['clients', 'projects', 'transactions', 'invoices',
+           'milestones', 'sessions', 'blueprintFeatures', 'meta'].map(s => clearStore(s))
         );
         localStorage.removeItem('qfl_settings');
         window.refreshSidebarProfile?.();
@@ -901,7 +920,7 @@ function shellHTML() {
             <div>
               <p class="text-sm font-medium text-[var(--clr-text)]">Export Backup</p>
               <p class="text-xs mt-0.5" style="color:var(--clr-text-faint)">
-                Download all clients, projects, invoices, transactions and settings as a JSON file.
+                Download all clients, projects, invoices, transactions, milestones, timer sessions, blueprint features and settings as a JSON file.
               </p>
             </div>
             <button id="btn-export" class="btn btn-ghost shrink-0 flex items-center gap-2">
