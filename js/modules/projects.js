@@ -35,6 +35,138 @@ let _collapsedMilestones = new Set(); // string milestone IDs whose sessions pan
 let _blueprintFeatures   = [];        // blueprint features for the current project
 let _currentView         = 'list';    // 'list' | 'detail' | 'blueprint'
 let _projectEnrichments  = new Map(); // projectId → { bpAmount, trackedHours } for list view
+let _timersRestored      = false;     // ensures timer restore runs only once per page load
+let _bgListenersInit     = false;     // ensures background handlers are registered only once
+
+const TIMER_STORAGE_KEY = 'qfl_timer_states';
+const ORIGINAL_TITLE    = document.title;   // base page title for restore
+
+/* ── Timer persistence — save to / restore from localStorage ───────────── */
+
+/** Save all active timer states to localStorage so they survive page refresh. */
+function _persistTimerStates() {
+  const data = [];
+  for (const [pid, t] of _timerStates) {
+    if (t.status === 'idle') continue;
+    data.push({
+      pid,
+      status:        t.status,
+      startedAt:     t.startedAt ? t.startedAt.toISOString() : null,
+      accumulatedMs: t.accumulatedMs,
+      projectName:   t.projectName,
+    });
+  }
+  if (data.length) {
+    localStorage.setItem(TIMER_STORAGE_KEY, JSON.stringify(data));
+  } else {
+    localStorage.removeItem(TIMER_STORAGE_KEY);
+  }
+}
+
+/**
+ * Restore timer states from localStorage after a page refresh.
+ * Running timers correctly compute elapsed time via their stored startedAt.
+ */
+function _restoreTimerStates() {
+  if (_timersRestored) return;
+  _timersRestored = true;
+
+  try {
+    const raw = localStorage.getItem(TIMER_STORAGE_KEY);
+    if (!raw) return;
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data) || !data.length) return;
+
+    for (const item of data) {
+      const pid = Number(item.pid);
+      if (!pid || !item.status) continue;
+
+      const t = getTimerState(pid);
+      t.projectName   = item.projectName || 'Project';
+      t.accumulatedMs = Number(item.accumulatedMs) || 0;
+
+      if (item.status === 'running' && item.startedAt) {
+        // Timer was running when page closed — resume the interval
+        t.startedAt  = new Date(item.startedAt);
+        t.status     = 'running';
+        t.intervalId = setInterval(() => _updateTimerDisplay(pid), 1000);
+        _registerTimerControls(pid);
+      } else if (item.status === 'paused') {
+        t.status    = 'paused';
+        t.startedAt = null;
+        _registerTimerControls(pid);
+      }
+    }
+
+    // Notify the notification panel about restored timers
+    dispatchTimerEvent('qfl:timer-updated');
+  } catch (e) {
+    console.warn('[Projects] Failed to restore timer states:', e);
+    localStorage.removeItem(TIMER_STORAGE_KEY);
+  }
+}
+
+/* ── Background activity — keep timer accurate while app is minimized/inactive ─ */
+
+/**
+ * Register global listeners that ensure timer state survives backgrounding:
+ * 1. visibilitychange — catch up display + persist when tab returns to foreground
+ * 2. beforeunload    — final persist before the page is torn down
+ * 3. Title heartbeat — show running timer in the browser tab title when active
+ */
+function _initBackgroundTimerHandlers() {
+  if (_bgListenersInit) return;
+  _bgListenersInit = true;
+
+  // When the tab becomes visible again, immediately catch up timer displays.
+  // Browsers throttle/suspend setInterval in background tabs, so the display
+  // may be stale. getElapsedMs() always returns the real elapsed time because
+  // it computes from the persisted startedAt timestamp.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible') {
+      // Re-sync every running timer's display
+      for (const [pid, t] of _timerStates) {
+        if (t.status === 'running') {
+          _updateTimerDisplay(pid);
+        }
+      }
+      // Refresh the notification panel cards + bell
+      dispatchTimerEvent('qfl:timer-updated');
+      _updateDocTitle();
+    } else {
+      // Going hidden: persist state in case the browser kills the tab
+      _persistTimerStates();
+    }
+  });
+
+  // Last-chance persist before unload (covers close/refresh/navigate-away)
+  window.addEventListener('beforeunload', () => {
+    _persistTimerStates();
+  });
+
+  // Update document title every second when a timer is running,
+  // giving visual feedback in the browser tab/taskbar while minimized.
+  setInterval(_updateDocTitle, 1000);
+}
+
+/** Show the running timer in the browser tab title, or reset to the default. */
+function _updateDocTitle() {
+  const running = [..._timerStates.entries()].find(([, t]) => t.status === 'running');
+  if (running) {
+    const [pid, t] = running;
+    const elapsed = getElapsedMs(pid);
+    const total   = Math.floor(elapsed / 1000);
+    const h = String(Math.floor(total / 3600)).padStart(2, '0');
+    const m = String(Math.floor((total % 3600) / 60)).padStart(2, '0');
+    const s = String(total % 60).padStart(2, '0');
+    document.title = `⏱ ${h}:${m}:${s} — ${t.projectName}`;
+  } else {
+    // Restore original title only if we previously changed it
+    if (document.title !== ORIGINAL_TITLE && document.title.startsWith('⏱')) {
+      document.title = ORIGINAL_TITLE;
+    }
+  }
+}
 
 /* ── Timer event helper
    Plays a slide-in animation on the container element between sub-views.
@@ -89,6 +221,12 @@ const STATUSES = [
 /* ── Mount / unmount ────────────────────────────────────────────────────── */
 export async function mount(container, params = {}) {
   _container = container;
+
+  // Restore any timers that were active before page refresh (runs once per page load)
+  _restoreTimerStates();
+
+  // Register background/visibility handlers so timers survive minimizing (runs once)
+  _initBackgroundTimerHandlers();
 
   if (params.id) {
     // Arrived via a direct URL route: #project/:id  or  #project/:id/blueprint
@@ -1450,7 +1588,9 @@ function renderTimerControls() {
           <polygon points="5 3 19 12 5 21 5 3"/>
         </svg>
         Start Timer
-      </button>`;
+      </button>
+      <span style="font-size:10px;color:var(--clr-text-faint);white-space:nowrap"
+            title="Long-press to add an external session">hold = manual</span>`;
   } else {
     const elapsed  = getElapsedMs(pid);
     const isPaused = status === 'paused';
@@ -1480,10 +1620,143 @@ function renderTimerControls() {
       </button>`;
   }
 
-  el.querySelector('#btn-timer-start') ?.addEventListener('click', () => _startTimer());
+  // Long-press on Start Timer → open external session modal; short tap → normal start
+  _bindLongPress(el.querySelector('#btn-timer-start'), () => _startTimer(), () => _openExternalSessionModal());
   el.querySelector('#btn-timer-pause') ?.addEventListener('click', () => _pauseTimerById(_currentProjectId));
   el.querySelector('#btn-timer-resume')?.addEventListener('click', () => _resumeTimerById(_currentProjectId));
   el.querySelector('#btn-timer-stop')  ?.addEventListener('click', () => _stopTimerById(_currentProjectId));
+}
+
+/* ── Long-press / short-tap helper (works on both desktop and mobile) ──── */
+const LONG_PRESS_MS = 500;
+
+/**
+ * Bind a short tap and a long press (hold ≥500 ms) to the same button.
+ * Handles mouse + touch + pointer events and prevents ghost clicks.
+ */
+function _bindLongPress(btn, onTap, onLongPress) {
+  if (!btn) return;
+  let timer    = null;
+  let fired    = false;   // true when long-press already triggered
+
+  const start = (e) => {
+    fired = false;
+    timer = setTimeout(() => {
+      fired = true;
+      // Visual feedback: brief scale pulse
+      btn.style.transform = 'scale(0.95)';
+      setTimeout(() => { btn.style.transform = ''; }, 120);
+      onLongPress();
+    }, LONG_PRESS_MS);
+  };
+
+  const cancel = () => { clearTimeout(timer); timer = null; };
+
+  const end = (e) => {
+    clearTimeout(timer);
+    if (!fired) onTap();       // short tap
+    // Prevent any ghost-click after touchend
+    if (fired && e?.cancelable) e.preventDefault();
+  };
+
+  // Pointer events (covers mouse + touch on modern browsers)
+  btn.addEventListener('pointerdown',   start);
+  btn.addEventListener('pointerup',     end);
+  btn.addEventListener('pointercancel', cancel);
+  btn.addEventListener('pointerleave',  cancel);
+
+  // Prevent context menu on long-press (mobile)
+  btn.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+/* ── External session modal — allows user to log hours manually ────────── */
+function _openExternalSessionModal() {
+  const pid     = _currentProjectId;
+  const project = _projects.find(p => p.id === pid);
+  if (!pid || !project) return;
+
+  const bodyHTML = `
+    <div class="px-6 py-5 space-y-4">
+      <p class="text-sm" style="color:var(--clr-text-muted)">
+        Log an external work session for <strong class="text-white">${escapeHtml(project.name)}</strong>.
+      </p>
+
+      <div class="flex gap-3">
+        <div class="flex-1">
+          <label for="ext-hours" class="block text-xs font-medium mb-1" style="color:var(--clr-text-muted)">Hours</label>
+          <input id="ext-hours" name="hours" type="number" min="0" max="999" step="1" value="0"
+                 class="form-input w-full" placeholder="0" />
+        </div>
+        <div class="flex-1">
+          <label for="ext-minutes" class="block text-xs font-medium mb-1" style="color:var(--clr-text-muted)">Minutes</label>
+          <input id="ext-minutes" name="minutes" type="number" min="0" max="59" step="1" value="0"
+                 class="form-input w-full" placeholder="0" />
+        </div>
+      </div>
+
+      <div>
+        <label for="ext-date" class="block text-xs font-medium mb-1" style="color:var(--clr-text-muted)">Date</label>
+        <input id="ext-date" name="date" type="date" class="form-input w-full"
+               value="${new Date().toISOString().slice(0, 10)}" />
+      </div>
+
+      <div>
+        <label for="ext-note" class="block text-xs font-medium mb-1" style="color:var(--clr-text-muted)">Note (optional)</label>
+        <input id="ext-note" name="note" type="text" class="form-input w-full" placeholder="e.g. Worked offline" />
+      </div>
+    </div>`;
+
+  openModal({
+    title: 'Log External Session',
+    bodyHTML,
+    submitLabel: 'Save Session',
+    onSubmit: async (fd) => {
+      const hours   = Math.max(0, parseInt(fd.get('hours')   || '0', 10));
+      const minutes = Math.max(0, Math.min(59, parseInt(fd.get('minutes') || '0', 10)));
+      const total   = hours * 3600 + minutes * 60;
+
+      if (total < 60) throw new Error('Session must be at least 1 minute.');
+
+      const dateStr = fd.get('date') || new Date().toISOString().slice(0, 10);
+      const note    = (fd.get('note') || '').trim();
+
+      // Determine milestone + session number
+      const [milestones, sessionsForPid] = await Promise.all([
+        loadMilestones(pid),
+        loadSessions(pid),
+      ]);
+
+      const sessionNumber = sessionsForPid.length + 1;
+      const name          = note ? `Session ${sessionNumber} — ${note}` : `Session ${sessionNumber} (manual)`;
+
+      const incompleteMs  = milestones.filter(m => !m.completed);
+      const lastMilestone = incompleteMs.length
+        ? incompleteMs.reduce((latest, m) => (m.createdAt > latest.createdAt ? m : latest), incompleteMs[0])
+        : null;
+
+      const endedAt   = new Date(dateStr + 'T23:59:59').toISOString();
+      const startedAt = new Date(new Date(endedAt).getTime() - total * 1000).toISOString();
+
+      await addRecord('sessions', {
+        projectId:       pid,
+        milestoneId:     lastMilestone?.id ?? null,
+        name,
+        durationSeconds: total,
+        startedAt,
+        endedAt,
+      });
+
+      // Refresh detail view if still showing this project
+      if (pid === _currentProjectId) {
+        _sessions = await loadSessions(pid);
+        if (lastMilestone) _collapsedMilestones.delete(String(lastMilestone.id));
+        renderMilestones();
+        renderStatCards();
+      }
+
+      toast(`${name} saved — ${formatDurationShort(total)}.`, 'success');
+    },
+  });
 }
 
 function _updateTimerDisplay(pid) {
@@ -1505,6 +1778,7 @@ function _startTimer() {
   t.intervalId   = setInterval(() => _updateTimerDisplay(pid), 1000);
   renderTimerControls();
   _registerTimerControls(pid);
+  _persistTimerStates();
   dispatchTimerEvent('qfl:timer-updated');
   toast('Timer started.', 'info');
 }
@@ -1518,6 +1792,7 @@ function _pauseTimerById(pid) {
   clearInterval(t.intervalId);
   t.intervalId    = null;
   if (pid === _currentProjectId) renderTimerControls();
+  _persistTimerStates();
   dispatchTimerEvent('qfl:timer-updated');
 }
 
@@ -1528,6 +1803,7 @@ function _resumeTimerById(pid) {
   t.startedAt  = new Date();
   t.intervalId = setInterval(() => _updateTimerDisplay(pid), 1000);
   if (pid === _currentProjectId) renderTimerControls();
+  _persistTimerStates();
   dispatchTimerEvent('qfl:timer-updated');
 }
 
@@ -1540,6 +1816,8 @@ async function _stopTimerById(pid) {
   if (window._qflAllTimerControls) window._qflAllTimerControls.delete(pid);
 
   if (pid === _currentProjectId) renderTimerControls();
+  _persistTimerStates();
+  _updateDocTitle();   // reset browser title if no timers remain
   dispatchTimerEvent('qfl:timer-updated');
 
   if (totalMs < 1000) {
@@ -2211,10 +2489,21 @@ async function openEditModal(id) {
 function confirmDelete(id, name) {
   openConfirm({
     title:        'Delete Project',
-    message:      `Are you sure you want to delete "${name}"? This action cannot be undone.`,
+    message:      `Delete "${name}"? This will also remove all milestones, timer sessions, and blueprint features for this project. This cannot be undone.`,
     confirmLabel: 'Delete',
     onConfirm: async () => {
-      await deleteRecord('projects', id);
+      // Cascade-delete all records related to this project
+      const [milestones, sessions, bpFeatures] = await Promise.all([
+        getByIndex('milestones',       'projectId', id),
+        getByIndex('sessions',         'projectId', id),
+        getByIndex('blueprintFeatures','projectId', id),
+      ]);
+      await Promise.all([
+        ...milestones.map(r => deleteRecord('milestones',       r.id)),
+        ...sessions.map(r   => deleteRecord('sessions',         r.id)),
+        ...bpFeatures.map(r => deleteRecord('blueprintFeatures',r.id)),
+        deleteRecord('projects', id),
+      ]);
       toast(`Project "${name}" deleted.`, 'info');
       await loadProjects();
     },
