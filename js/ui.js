@@ -32,7 +32,9 @@ export function toast(message, type = 'success', duration = 3500) {
 
   const el = document.createElement('div');
   el.className = `toast toast-${type}`;
-  el.innerHTML = `${icons[type] ?? ''}<span>${message}</span>`;
+  // Insert icon as HTML but set message via textContent to prevent XSS
+  el.innerHTML = `${icons[type] ?? ''}<span></span>`;
+  el.querySelector('span').textContent = message;
   container.appendChild(el);
 
   // Auto-dismiss
@@ -78,6 +80,7 @@ export function openModal({ title, bodyHTML, onSubmit, submitLabel = 'Save' }) {
   // Attach submit handler
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (submitBtn.disabled) return;  // guard against concurrent submits
 
     // Hide any previous error
     const banner   = document.getElementById('modal-error-banner');
@@ -104,7 +107,7 @@ export function openModal({ title, bodyHTML, onSubmit, submitLabel = 'Save' }) {
     }
   };
 
-  form.addEventListener('submit', handleSubmit, { once: true });
+  form.addEventListener('submit', handleSubmit);
   _modalCloseCallback = () => form.removeEventListener('submit', handleSubmit);
 
   // Open with animation

@@ -16,6 +16,7 @@ import { toast, openModal, openConfirm }                       from '../ui.js';
 import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce } from '../utils.js';
 import { addNotification }                                     from '../notifications.js';
 import { printInvoice }                                        from '../invoice-pdf.js';
+import { getSettings }                                         from '../settings-store.js';
 
 /* ── Module state ───────────────────────────────────────────────────────── */
 let _invoices  = [];
@@ -81,15 +82,24 @@ async function processOverdue() {
     (inv.status === 'sent' || inv.status === 'draft') &&
     inv.dueAt && inv.dueAt < today
   );
-  for (const inv of toFlip) {
-    await updateRecord('invoices', inv.id, { status: 'overdue' });
-    inv.status = 'overdue';   // mirror change in-memory
-    addNotification({
-      type:    'overdue',
-      title:   `Invoice ${inv.number ?? inv.id} is now overdue`,
-      message: `${clientName(inv.clientId)} — was due ${formatDate(inv.dueAt)}.
-                Status automatically changed to Overdue.`,
-    });
+  if (!toFlip.length) return;
+
+  try {
+    for (const inv of toFlip) {
+      await updateRecord('invoices', inv.id, { status: 'overdue' });
+      inv.status = 'overdue';   // mirror change in-memory
+      addNotification({
+        type:    'overdue',
+        title:   `Invoice ${inv.number ?? inv.id} is now overdue`,
+        message: `${clientName(inv.clientId)} — was due ${formatDate(inv.dueAt)}.
+                  Status automatically changed to Overdue.`,
+      });
+    }
+  } catch (err) {
+    // Partial failure: DB and in-memory state may diverge — reload from DB to resync
+    console.error('[Invoices] processOverdue partial failure — reloading:', err);
+    _invoices = await getAllRecords('invoices');
+    toast('Some invoices could not be auto-updated.', 'error');
   }
 }
 /* ── Lookup helpers ─────────────────────────────────────────────────────── */
@@ -98,14 +108,15 @@ const projectName = (id) => _projects.find(p => p.id === Number(id))?.name ?? '�
 
 /* ── Auto-generate next invoice number ──────────────────────────────────── */
 function nextInvoiceNumber() {
-  if (!_invoices.length) return 'INV-0001';
-  // Extract the highest numeric suffix from existing numbers
+  // Read prefix from settings (e.g. "INV-", "QFL-", etc.), fall back to 'INV-'
+  const prefix = getSettings().invoice?.prefix?.trim() || 'INV-';
+  // Extract the highest numeric suffix from ALL existing numbers regardless of prefix
   const max = _invoices.reduce((best, inv) => {
     const match = String(inv.number ?? '').match(/(\d+)$/);
     const num   = match ? parseInt(match[1], 10) : 0;
     return num > best ? num : best;
   }, 0);
-  return `INV-${String(max + 1).padStart(4, '0')}`;
+  return `${prefix}${String(max + 1).padStart(4, '0')}`;
 }
 
 /* ── Apply search + status filters ─────────────────────────────────────── */
@@ -122,7 +133,7 @@ function applyFilters() {
       ? new Date(now.getFullYear(), now.getMonth() - 1, now.getDate())
       : new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
     list = list.filter(inv => {
-      const d = new Date(inv.date ?? inv.createdAt ?? '');
+      const d = new Date(inv.issuedAt ?? inv.createdAt ?? '');
       return !isNaN(d) && d >= cutoff;
     });
   }
@@ -242,7 +253,7 @@ function renderTable(invoices) {
         invoice.status = next.value;
         renderStats();
         renderTable(applyFilters());
-        if (next.value === 'paid' && !wasPaid) {
+        if (next.value === 'paid' && !wasPaid && !invoice.paidTransactionCreated) {
           await createPaidTransaction(invoice);
           toast('Status changed to Paid — income transaction added.', 'success');
         } else {
@@ -463,6 +474,9 @@ async function createPaidTransaction(invoice) {
     note:      `Invoice ${invoice.number ?? invoice.id}`,
     createdAt: new Date().toISOString(),
   });
+  // Mark the invoice so future re-pays don't create duplicate transactions
+  await updateRecord('invoices', invoice.id, { paidTransactionCreated: true });
+  invoice.paidTransactionCreated = true;  // mirror in-memory
 }
 
 /* ── Add modal ──────────────────────────────────────────────────────────── */
@@ -528,7 +542,7 @@ async function openEditModal(id) {
       const wasAlreadyPaid = invoice.status === 'paid';
 
       await updateRecord('invoices', id, updates);
-      if (updates.status === 'paid' && !wasAlreadyPaid) {
+      if (updates.status === 'paid' && !wasAlreadyPaid && !invoice.paidTransactionCreated) {
         await createPaidTransaction({ ...invoice, ...updates });
         toast(`Invoice ${updates.number} saved — income transaction added.`, 'success');
       } else {

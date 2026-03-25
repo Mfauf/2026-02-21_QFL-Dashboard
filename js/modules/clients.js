@@ -366,12 +366,49 @@ async function openEditModal(id) {
 }
 
 /* ── Delete ─────────────────────────────────────────────────────────────── */
-function confirmDelete(id, name) {
+async function confirmDelete(id, name) {
+  // Check for linked records so we can warn the user
+  const [linkedProjects, linkedInvoices] = await Promise.all([
+    getByIndex('projects', 'clientId', id),
+    getByIndex('invoices', 'clientId', id),
+  ]);
+
+  const projectCount = linkedProjects.length;
+  const invoiceCount = linkedInvoices.length;
+
+  let message = `Are you sure you want to delete "${name}"?`;
+  if (projectCount || invoiceCount) {
+    const parts = [];
+    if (projectCount) parts.push(`${projectCount} project${projectCount !== 1 ? 's' : ''} (and all related milestones, sessions & blueprints)`);
+    if (invoiceCount) parts.push(`${invoiceCount} invoice${invoiceCount !== 1 ? 's' : ''}`);
+    message += ` This will also permanently delete ${parts.join(' and ')}.`;
+  }
+  message += ' This cannot be undone.';
+
   openConfirm({
     title:        'Delete Client',
-    message:      `Are you sure you want to delete "${name}"? This action cannot be undone.`,
+    message,
     confirmLabel: 'Delete',
     onConfirm: async () => {
+      // Cascade-delete each project's children, then the projects themselves
+      for (const project of linkedProjects) {
+        const [milestones, sessions, bpFeatures] = await Promise.all([
+          getByIndex('milestones',        'projectId', project.id),
+          getByIndex('sessions',          'projectId', project.id),
+          getByIndex('blueprintFeatures', 'projectId', project.id),
+        ]);
+        await Promise.all([
+          ...milestones.map(r => deleteRecord('milestones',       r.id)),
+          ...sessions.map(r   => deleteRecord('sessions',         r.id)),
+          ...bpFeatures.map(r => deleteRecord('blueprintFeatures',r.id)),
+        ]);
+        await deleteRecord('projects', project.id);
+      }
+
+      // Delete linked invoices
+      await Promise.all(linkedInvoices.map(inv => deleteRecord('invoices', inv.id)));
+
+      // Delete the client itself
       await deleteRecord('clients', id);
       toast(`Client "${name}" deleted.`, 'info');
       await loadClients();

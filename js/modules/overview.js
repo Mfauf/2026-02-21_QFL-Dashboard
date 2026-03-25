@@ -163,6 +163,12 @@ export function unmount() {
 function drawBarChart(labels, incomeData, expenseData) {
   const ctx = document.getElementById('chart-bar')?.getContext('2d');
   if (!ctx) return;
+
+  // Read CSS custom properties at render time so charts respect the active theme
+  const textMuted = cssVar('--clr-text-muted');
+  const textFaint = cssVar('--clr-text-faint');
+  const gridColor = cssVar('--clr-border');
+
   const chart = new Chart(ctx, {
     type: 'bar',
     data: {
@@ -190,7 +196,7 @@ function drawBarChart(labels, incomeData, expenseData) {
       responsive: true,
       maintainAspectRatio: false,
       plugins: {
-        legend: { labels: { color: '#94a3b8', font: { size: 12 } } },
+        legend: { labels: { color: textMuted, font: { size: 12 } } },
         tooltip: {
           callbacks: {
             label: ctx => ` ${ctx.dataset.label}: QAR ${Number(ctx.raw).toLocaleString()}`,
@@ -198,10 +204,10 @@ function drawBarChart(labels, incomeData, expenseData) {
         },
       },
       scales: {
-        x: { ticks: { color: '#64748b' }, grid: { color: 'rgba(255,255,255,0.04)' } },
+        x: { ticks: { color: textFaint }, grid: { color: gridColor } },
         y: {
-          ticks: { color: '#64748b', callback: v => `QAR ${(v/1000).toFixed(0)}k` },
-          grid:  { color: 'rgba(255,255,255,0.04)' },
+          ticks: { color: textFaint, callback: v => `QAR ${(v/1000).toFixed(0)}k` },
+          grid:  { color: gridColor },
           beginAtZero: true,
         },
       },
@@ -244,6 +250,12 @@ function drawDonutChart(statusDef, counts) {
 }
 
 /* ── Helpers ────────────────────────────────────────────────────────────── */
+
+/** Read a CSS custom property from the root element (theme-aware). */
+function cssVar(name) {
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
 function last6Months() {
   const labels = [];
   const now    = new Date();
