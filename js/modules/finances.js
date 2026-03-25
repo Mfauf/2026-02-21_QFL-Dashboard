@@ -27,6 +27,8 @@ let _filter       = 'all';   // 'all' | 'income' | 'outcome'
 let _searchQ      = '';
 let _container    = null;
 let _dateRange    = 'all';   // 'all' | 'last-month' | 'last-year'
+let _recurringProcessing  = false;  // concurrency guard
+let _lastRecurringRunDate = null;   // prevents duplicate runs on same calendar day
 
 /* ── Categories — read live from settings-store so user edits are reflected ─ */
 const incomeCats  = () => getSettings().categories.transaction;
@@ -38,6 +40,7 @@ export async function mount(container) {
   _filter    = 'all';
   _searchQ   = '';
   _dateRange = 'all';
+  _lastRecurringRunDate = null;  // allow recurring processing on fresh mount
 
   container.innerHTML = shellHTML();
   bindListeners();
@@ -71,6 +74,12 @@ async function loadTransactions() {
 /* ── Auto-generate recurring entries ────────────────────────────────────── */
 async function processRecurring() {
   const today   = new Date().toISOString().slice(0, 10);
+
+  // Prevent duplicate generation: skip if already processed today or still processing
+  if (_lastRecurringRunDate === today || _recurringProcessing) return 0;
+  _recurringProcessing = true;
+
+  try {
   // Only parent templates (have a recur rule but are NOT themselves auto-generated)
   const parents = _transactions.filter(
     t => t.recurring && t.recurring !== 'none' && !t.recurringId
@@ -117,7 +126,13 @@ async function processRecurring() {
       });
     }
   }
+
+  _lastRecurringRunDate = today;
   return added;
+
+  } finally {
+    _recurringProcessing = false;
+  }
 }
 
 function nextRecurDate(dateStr, period) {
