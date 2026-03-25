@@ -1612,19 +1612,23 @@ function renderTimerControls() {
              Pause
            </button>`}
       <button id="btn-timer-stop" class="btn btn-ghost flex items-center gap-2 text-sm"
-              style="color:var(--clr-danger);border:1px solid var(--clr-danger-ring)">
+              style="color:var(--clr-danger);border:1px solid var(--clr-danger-ring)"
+              title="Hold to add a note">
         <svg style="width:12px;height:12px" fill="currentColor" viewBox="0 0 24 24">
           <rect x="4" y="4" width="16" height="16" rx="2"/>
         </svg>
         Stop
-      </button>`;
+      </button>
+      <span style="font-size:10px;color:var(--clr-text-faint);white-space:nowrap"
+            title="Long-press Stop to add a note">hold = note</span>`;
   }
 
   // Long-press on Start Timer → open external session modal; short tap → normal start
   _bindLongPress(el.querySelector('#btn-timer-start'), () => _startTimer(), () => _openExternalSessionModal());
   el.querySelector('#btn-timer-pause') ?.addEventListener('click', () => _pauseTimerById(_currentProjectId));
   el.querySelector('#btn-timer-resume')?.addEventListener('click', () => _resumeTimerById(_currentProjectId));
-  el.querySelector('#btn-timer-stop')  ?.addEventListener('click', () => _stopTimerById(_currentProjectId));
+  // Long-press on Stop → add note before saving; short tap → stop immediately
+  _bindLongPress(el.querySelector('#btn-timer-stop'), () => _stopTimerById(_currentProjectId), () => _stopTimerWithNote(_currentProjectId));
 }
 
 /* ── Long-press / short-tap helper (works on both desktop and mobile) ──── */
@@ -1807,7 +1811,11 @@ function _resumeTimerById(pid) {
   dispatchTimerEvent('qfl:timer-updated');
 }
 
-async function _stopTimerById(pid) {
+/**
+ * Core stop-and-save logic. Accepts an optional note to include in the session name.
+ * Called by both short-tap stop (note = null) and long-press stop-with-note.
+ */
+async function _stopTimerById(pid, note = null) {
   const t       = _timerStates.get(pid);
   if (!t || t.status === 'idle') return;
   const totalMs = getElapsedMs(pid);
@@ -1834,7 +1842,9 @@ async function _stopTimerById(pid) {
   ]);
 
   const sessionNumber  = sessionsForPid.length + 1;
-  const name           = `Session ${sessionNumber}`;
+  const name           = note
+    ? `Session ${sessionNumber} — ${note}`
+    : `Session ${sessionNumber}`;
 
   const incompleteMs   = milestones.filter(m => !m.completed);
   const lastMilestone  = incompleteMs.length
@@ -1864,6 +1874,64 @@ async function _stopTimerById(pid) {
   // Fire stopped event carrying remaining active timers
   window.dispatchEvent(new CustomEvent('qfl:timer-stopped', { detail: { allTimers: allActiveTimers() } }));
   toast(`${name} saved — ${formatDurationShort(durationSeconds)}.`, 'success');
+}
+
+/**
+ * Long-press Stop: pause the timer, show a modal for a session note,
+ * then save with that note (or resume if user cancels).
+ */
+function _stopTimerWithNote(pid) {
+  const t = _timerStates.get(pid);
+  if (!t || t.status === 'idle') return;
+
+  // Pause the timer while the user types a note
+  const wasRunning = t.status === 'running';
+  if (wasRunning) _pauseTimerById(pid);
+
+  const elapsed = formatDurationShort(Math.floor(getElapsedMs(pid) / 1000));
+
+  const bodyHTML = `
+    <div class="px-6 py-5 space-y-4">
+      <p class="text-sm" style="color:var(--clr-text-muted)">
+        Saving session (<strong class="text-white">${elapsed}</strong>). Add an optional note:
+      </p>
+      <div>
+        <label for="stop-note" class="block text-xs font-medium mb-1" style="color:var(--clr-text-muted)">Note</label>
+        <input id="stop-note" name="note" type="text" class="form-input w-full"
+               placeholder="e.g. Finished header layout" autofocus />
+      </div>
+    </div>`;
+
+  openModal({
+    title: 'Stop Timer — Add Note',
+    bodyHTML,
+    submitLabel: 'Save Session',
+    onSubmit: async (fd) => {
+      const note = (fd.get('note') || '').trim() || null;
+      await _stopTimerById(pid, note);
+    },
+  });
+
+  // If user cancels (ESC / backdrop / Cancel button), resume the timer
+  const backdrop = document.getElementById('modal-backdrop');
+  const resumeOnCancel = () => {
+    // Only resume if the timer is still paused (wasn't already stopped via submit)
+    const current = _timerStates.get(pid);
+    if (current && current.status === 'paused' && wasRunning) {
+      _resumeTimerById(pid);
+    }
+  };
+  // Listen for the modal closing without submit (hidden class re-added)
+  const observer = new MutationObserver((mutations) => {
+    for (const m of mutations) {
+      if (m.type === 'attributes' && backdrop.classList.contains('hidden')) {
+        resumeOnCancel();
+        observer.disconnect();
+        return;
+      }
+    }
+  });
+  observer.observe(backdrop, { attributes: true, attributeFilter: ['class'] });
 }
 
 /* ── Blueprint ───────────────────────────────────────────────────────────── */
