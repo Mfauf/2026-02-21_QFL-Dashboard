@@ -1533,6 +1533,7 @@ function confirmDeleteSession(id, name) {
       await deleteRecord('sessions', id);
       _sessions = _sessions.filter(s => s.id !== id);
       renderMilestones();
+      renderStatCards();       // update hours & amount after removing tracked time
       renderTimerControls();
       toast('Session deleted.', 'info');
     },
@@ -2275,6 +2276,7 @@ function showBlueprintFeatureForm(editId = null, prefill = null) {
       }
       _blueprintFeatures = await loadBlueprintFeatures(_currentProjectId);
       renderBlueprintFeatures();
+      renderStatCards();       // update amount after blueprint feature change
     },
   });
 }
@@ -2288,6 +2290,7 @@ async function confirmDeleteBlueprintFeature(id, name) {
       await deleteRecord('blueprintFeatures', id);
       _blueprintFeatures = await loadBlueprintFeatures(_currentProjectId);
       renderBlueprintFeatures();
+      renderStatCards();       // update amount after blueprint feature removal
     },
   });
 }
