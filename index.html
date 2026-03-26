@@ -484,14 +484,20 @@
     initRouter();
   </script>
 
-  <!-- Service Worker registration -->
+  <!-- Service Worker registration (skip on local dev server) -->
   <script>
-    if ('serviceWorker' in navigator) {
+    if ('serviceWorker' in navigator && !location.origin.includes('127.0.0.1')) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('./sw.js')
           .then(reg => console.log('[SW] Registered:', reg.scope))
           .catch(err => console.warn('[SW] Registration failed:', err));
       });
+    } else if (location.origin.includes('127.0.0.1')) {
+      // Unregister any leftover SW from a previous session
+      navigator.serviceWorker?.getRegistrations()
+        .then(regs => regs.forEach(r => r.unregister()));
+      caches?.keys().then(keys => keys.forEach(k => caches.delete(k)));
+      console.log('[SW] Skipped — dev environment detected');
     }
   </script>
 
