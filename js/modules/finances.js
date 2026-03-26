@@ -15,7 +15,7 @@
 
 import { addRecord, getAllRecords, updateRecord, deleteRecord } from '../db.js';
 import { toast, openModal, openConfirm }                       from '../ui.js';
-import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce } from '../utils.js';
+import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce, getCurrencySymbol, getCurrencyCode } from '../utils.js';
 import { addNotification }                                     from '../notifications.js';
 import { getSettings }                                         from '../settings-store.js';
 
@@ -120,7 +120,7 @@ async function processRecurring() {
         title:   `Auto-generated: ${parent.category}`,
         message: `${parentAdded} ${parent.recurring} ${
           parent.type === 'income' ? 'income' : 'expense'
-        } entr${parentAdded > 1 ? 'ies' : 'y'} added (QAR ${
+        } entr${parentAdded > 1 ? 'ies' : 'y'} added (${getCurrencySymbol()} ${
           Number(parent.amount).toLocaleString()
         } each).`,
       });
@@ -409,7 +409,7 @@ function formHTML(tx = {}) {
         </div>
         <div>
           <label class="form-label" for="tf-amount">
-            Amount (QAR) <span style="color:var(--clr-danger)">*</span>
+            Amount (${getCurrencyCode()}) <span style="color:var(--clr-danger)">*</span>
           </label>
           <input id="tf-amount" name="amount" type="number" min="0" step="0.01"
                  class="form-input" placeholder="e.g. 3000"

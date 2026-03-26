@@ -4,7 +4,7 @@
  */
 
 import { getAllRecords } from '../db.js';
-import { formatQAR, formatDate } from '../utils.js';
+import { formatQAR, formatDate, getCurrencySymbol } from '../utils.js';
 
 /* keep references so we can destroy on unmount (avoid canvas reuse errors) */
 let _charts = [];
@@ -199,14 +199,14 @@ function drawBarChart(labels, incomeData, expenseData) {
         legend: { labels: { color: textMuted, font: { size: 12 } } },
         tooltip: {
           callbacks: {
-            label: ctx => ` ${ctx.dataset.label}: QAR ${Number(ctx.raw).toLocaleString()}`,
+            label: ctx => ` ${ctx.dataset.label}: ${getCurrencySymbol()} ${Number(ctx.raw).toLocaleString()}`,
           },
         },
       },
       scales: {
         x: { ticks: { color: textFaint }, grid: { color: gridColor } },
         y: {
-          ticks: { color: textFaint, callback: v => `QAR ${(v/1000).toFixed(0)}k` },
+          ticks: { color: textFaint, callback: v => `${getCurrencySymbol()} ${(v/1000).toFixed(0)}k` },
           grid:  { color: gridColor },
           beginAtZero: true,
         },
