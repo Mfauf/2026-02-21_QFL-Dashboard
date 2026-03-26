@@ -13,7 +13,7 @@
 
 import { addRecord, getAllRecords, getByIndex, updateRecord, deleteRecord } from '../db.js';
 import { toast, openModal, openConfirm }                       from '../ui.js';
-import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce } from '../utils.js';
+import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce, getCurrencyCode } from '../utils.js';
 import { addNotification }                                     from '../notifications.js';
 import { printInvoice }                                        from '../invoice-pdf.js';
 import { getSettings }                                         from '../settings-store.js';
@@ -431,7 +431,7 @@ function formHTML(invoice = {}, autoNumber = '') {
       <!-- Amount -->
       <div>
         <label class="form-label" for="if-amount">
-          Amount (QAR) <span style="color:var(--clr-danger)">*</span>
+          Amount (${getCurrencyCode()}) <span style="color:var(--clr-danger)">*</span>
         </label>
         <input id="if-amount" name="amount" type="number" min="0" step="0.01"
                class="form-input" placeholder="e.g. 5000"

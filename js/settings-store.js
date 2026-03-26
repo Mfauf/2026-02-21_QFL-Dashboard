@@ -20,6 +20,7 @@ export const DEFAULTS = {
     phone:    '',
     tagline:  '',
     avatar:   '',   // base64 data URL of the uploaded profile picture
+    currency: 'USD', // ISO 4217 code — used by formatCurrency() in utils.js
   },
   invoice: {
     prefix:       'INV-',

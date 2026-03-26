@@ -15,7 +15,7 @@
 import { getSettings, saveSettings, DEFAULTS } from '../settings-store.js';
 import { getAllRecords, clearStore, bulkAddRecords } from '../db.js';
 import { toast, openConfirm, openModal } from '../ui.js';
-import { escapeHtml }                  from '../utils.js';
+import { escapeHtml, CURRENCIES, getCurrencyCode } from '../utils.js';
 import { applyTheme }                  from '../theme.js';
 import { getOrCreateUID, openPeer, connectAndSync } from '../sync.js';
 
@@ -60,6 +60,7 @@ function populate() {
   _v('sp-email',    s.profile.email);
   _v('sp-phone',    s.profile.phone);
   _v('sp-tagline',  s.profile.tagline);
+  _v('sp-currency', s.profile.currency || 'USD');
 
   // Avatar preview
   renderAvatarPreview(s.profile.avatar, s.profile.name);
@@ -106,7 +107,7 @@ function renderDefaultFeaturesList(list) {
             <th class="text-left py-2 pb-3 pr-4 font-semibold text-xs uppercase tracking-wide"
                 style="color:var(--clr-text-faint)">Details</th>
             <th class="text-left py-2 pb-3 pr-2 font-semibold text-xs uppercase tracking-wide"
-                style="color:var(--clr-text-faint)">Price (QAR)</th>
+                style="color:var(--clr-text-faint)">Price (${getCurrencyCode()})</th>
             <th class="py-2 pb-3 w-16"></th>
           </tr>
         </thead>
@@ -170,7 +171,7 @@ function showDefaultFeatureForm(editIndex = null) {
         <div>
           <label class="form-label">
             Price
-            <span class="text-xs font-normal ml-1" style="color:var(--clr-text-faint)">(optional, QAR)</span>
+            <span class="text-xs font-normal ml-1" style="color:var(--clr-text-faint)">(optional, ${getCurrencyCode()})</span>
           </label>
           <input id="sdf-f-price" class="form-input" type="number" min="0" step="0.01"
                  value="${f.price ?? ''}" placeholder="0.00"/>
@@ -472,6 +473,7 @@ function bindAll() {
         email:   fd.get('email')?.trim()   || '',
         phone:   fd.get('phone')?.trim()   || '',
         tagline: fd.get('tagline')?.trim() || '',
+        currency: fd.get('currency')       || 'USD',
       },
       blueprint: {
         amountPerHour: Number(fd.get('amountPerHour') || 0),
@@ -654,7 +656,18 @@ function shellHTML() {
                      placeholder="e.g. Mohammed Al-Fauzi" autocomplete="name"/>
             </div>
             <div>
-              <label class="form-label" for="sb-bp-hourly">Default Amount per Hour (QAR)</label>
+              <label class="form-label" for="sp-currency">Currency</label>
+              <select id="sp-currency" name="currency" class="form-input">
+                ${Object.entries(CURRENCIES).map(([code, sym]) =>
+                  `<option value="${code}">${code} (${sym})</option>`
+                ).join('')}
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label class="form-label" for="sb-bp-hourly">Default Amount per Hour</label>
               <input id="sb-bp-hourly" name="amountPerHour" type="number" min="0" step="0.01"
                      class="form-input" placeholder="e.g. 150"/>
             </div>

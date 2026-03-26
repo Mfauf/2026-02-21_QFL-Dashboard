@@ -14,7 +14,7 @@
 
 import { addRecord, getAllRecords, getByIndex, updateRecord, deleteRecord } from '../db.js';
 import { toast, openModal, closeModal, openConfirm }            from '../ui.js';
-import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce } from '../utils.js';
+import { formatDate, formatQAR, escapeHtml, matchesSearch, debounce, getCurrencySymbol, getCurrencyCode } from '../utils.js';
 import { getSettings }                                         from '../settings-store.js';
 import { navigate }                                            from '../router.js';
 import { printBlueprint }                                      from '../blueprint-pdf.js';
@@ -778,7 +778,8 @@ function detailHTML(project) {
 /* ── Amount Source Modal ────────────────────────────────────────────────── */
 function showAmountSourceModal(project, { bpTotal, hourlyAmount, hourlyRate, effectiveHours }) {
   const saved   = project.amountSources ?? [];
-  const fmtQAR  = (v) => v > 0 ? `QAR ${Number(v).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:2})}` : '—';
+  const _sym    = getCurrencySymbol();
+  const fmtQAR  = (v) => v > 0 ? `${_sym} ${Number(v).toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:2})}` : '—';
 
   // Pre-fill contract value: prefer stored contractAmount, else current project.amount if no other source
   const contractPrefill = project.contractAmount != null
@@ -857,7 +858,7 @@ function showAmountSourceModal(project, { bpTotal, hourlyAmount, hourlyRate, eff
             <p class="ams-info-sub">Manually agreed project value</p>
           </div>
           <div class="ams-contract-input-wrap">
-            <span class="ams-contract-prefix">QAR</span>
+            <span class="ams-contract-prefix">${getCurrencySymbol()}</span>
             <input id="ams-contract-val" type="number" min="0" step="0.01"
                    class="ams-contract-input" placeholder="0.00" value="${contractPrefill}">
           </div>
@@ -948,7 +949,7 @@ function showAmountSourceModal(project, { bpTotal, hourlyAmount, hourlyRate, eff
                 + (useHourly    ? (hourlyAmount||0) : 0)
                 + (useBlueprint ? (bpTotal||0)      : 0);
     const el = document.getElementById('ams-total');
-    if (el) el.textContent = total > 0 ? `QAR ${total.toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:2})}` : '—';
+    if (el) el.textContent = total > 0 ? `${_sym} ${total.toLocaleString('en-US', {minimumFractionDigits:0,maximumFractionDigits:2})}` : '—';
   };
   document.getElementById('ams-contract')?.addEventListener('change', calc);
   document.getElementById('ams-hourly')?.addEventListener('change', calc);
@@ -1533,6 +1534,7 @@ function confirmDeleteSession(id, name) {
       await deleteRecord('sessions', id);
       _sessions = _sessions.filter(s => s.id !== id);
       renderMilestones();
+      renderStatCards();       // update hours & amount after removing tracked time
       renderTimerControls();
       toast('Session deleted.', 'info');
     },
@@ -1985,7 +1987,7 @@ function blueprintViewHTML(project, clientName, terms) {
                   onmouseenter="this.style.background='var(--clr-surface-2)'"
                   onmouseleave="this.style.background='none'">
             <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escapeHtml(d.name)}</span>
-            ${d.price != null && d.price !== '' ? `<span style="font-size:11px;color:var(--clr-text-faint);flex-shrink:0">QAR ${Number(d.price).toLocaleString()}</span>` : ''}
+            ${d.price != null && d.price !== '' ? `<span style="font-size:11px;color:var(--clr-text-faint);flex-shrink:0">${getCurrencySymbol()} ${Number(d.price).toLocaleString()}</span>` : ''}
           </button>`).join('')}
       </div>
     </div>` : `
@@ -2275,6 +2277,7 @@ function showBlueprintFeatureForm(editId = null, prefill = null) {
       }
       _blueprintFeatures = await loadBlueprintFeatures(_currentProjectId);
       renderBlueprintFeatures();
+      renderStatCards();       // update amount after blueprint feature change
     },
   });
 }
@@ -2288,6 +2291,7 @@ async function confirmDeleteBlueprintFeature(id, name) {
       await deleteRecord('blueprintFeatures', id);
       _blueprintFeatures = await loadBlueprintFeatures(_currentProjectId);
       renderBlueprintFeatures();
+      renderStatCards();       // update amount after blueprint feature removal
     },
   });
 }
@@ -2428,7 +2432,7 @@ function formHTML(project = {}) {
       <!-- Amount + Hours -->
       <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <div>
-          <label class="form-label" for="pf-amount">Contract Amount (QAR)</label>
+          <label class="form-label" for="pf-amount">Contract Amount (${getCurrencyCode()})</label>
           <input id="pf-amount" name="amount" type="number" min="0" step="0.01" class="form-input"
                  placeholder="e.g. 15000" value="${vAmount()}" autocomplete="off"/>
         </div>

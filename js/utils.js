@@ -2,6 +2,28 @@
  * utils.js — Shared helper functions used across all modules.
  */
 
+import { getSettings } from './settings-store.js';
+
+/* ── Currency map ───────────────────────────────────────────────────────── */
+/** Map of ISO 4217 codes → display symbols. */
+export const CURRENCIES = {
+  USD: '$',   EUR: '€',   GBP: '£',   QAR: 'QAR', SAR: 'SAR',
+  AED: 'AED', KWD: 'KWD', BHD: 'BHD', OMR: 'OMR', INR: '₹',
+  JPY: '¥',   CAD: 'CA$', AUD: 'AU$', CHF: 'CHF', CNY: '¥',
+  TRY: '₺',   BRL: 'R$',  EGP: 'EGP', JOD: 'JOD',
+};
+
+/** Returns the user's chosen currency code (e.g. 'USD'). */
+export function getCurrencyCode() {
+  return getSettings().profile?.currency || 'USD';
+}
+
+/** Returns the display symbol for the active currency (e.g. '$'). */
+export function getCurrencySymbol() {
+  const code = getCurrencyCode();
+  return CURRENCIES[code] ?? code;
+}
+
 /* ── Date & time ────────────────────────────────────────────────────────── */
 
 /**
@@ -49,22 +71,26 @@ export function timeAgo(date) {
 /* ── Number / currency ──────────────────────────────────────────────────── */
 
 /**
- * Formats a number as a QAR currency string.
+ * Formats a number as a currency string using the user's chosen currency.
  * @param {number} amount
- * @param {boolean} [compact] — show abbreviated form e.g. "QAR 12.5K"
+ * @param {boolean} [compact] — show abbreviated form e.g. "$ 12.5K"
  * @returns {string}
  */
-export function formatQAR(amount, compact = false) {
+export function formatCurrency(amount, compact = false) {
   if (amount == null || isNaN(amount)) return '—';
+  const sym = getCurrencySymbol();
   if (compact) {
     const abs = Math.abs(amount);
     const sign = amount < 0 ? '-' : '';
-    if (abs >= 1_000_000_000) return `QAR ${sign}${(abs / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}B`;
-    if (abs >= 1_000_000)     return `QAR ${sign}${(abs / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
-    if (abs >= 1_000)         return `QAR ${sign}${(abs / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
+    if (abs >= 1_000_000_000) return `${sym} ${sign}${(abs / 1_000_000_000).toFixed(1).replace(/\.0$/, '')}B`;
+    if (abs >= 1_000_000)     return `${sym} ${sign}${(abs / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`;
+    if (abs >= 1_000)         return `${sym} ${sign}${(abs / 1_000).toFixed(1).replace(/\.0$/, '')}K`;
   }
-  return 'QAR ' + Number(amount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+  return sym + ' ' + Number(amount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
 }
+
+/** @deprecated Use formatCurrency instead — kept for backward compatibility. */
+export const formatQAR = formatCurrency;
 
 /* ── String helpers ─────────────────────────────────────────────────────── */
 
